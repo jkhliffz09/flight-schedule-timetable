@@ -1,45 +1,54 @@
-# Flight Schedule Timetable
+# Flight Schedule Timetable (Embeddable Web Widget)
 
-WordPress plugin for flight search UI, timetable results, API integration, and admin analytics.
+Modern ReactJS + TailwindCSS + Griddy Icons flight timetable widget.
 
-## Plugin Info
-- Name: Flight Schedule Timetable
-- Author: khliffz
-- Current Version: 1.2.0
-- GitHub: https://github.com/jkhliffz09/flight-schedule-timetable
+## Stack
+- React (browser ESM)
+- TailwindCSS
+- Griddy Icons (`griddy-icons`)
 
-## Features
-- TailwindCSS + Gridicons powered UI
-- Desktop and mobile flight search form
-- Loading animation and expandable result cards
-- Specific-day and 7-day timetable views
-- Admin dashboard tabs: KPI, Analytics, Settings
-- API settings for URL + subscription key
-- GitHub release-based plugin updater
+## Why this is safe to embed
+This widget is embedded via `iframe`, so its styles and animations are isolated from any WordPress theme or host site CSS.
 
-## Settings
-In WordPress Admin:
-1. Go to `Flight Timetable`.
-2. Open `Settings` tab.
-3. Set API URL and Subscription Key.
+## Files
+- `web/index.html` - widget app
+- `web/app.js` - React app logic
+- `web/styles.css` - custom animation styles
+- `web/embed.js` - embeddable loader script
 
-Example values:
-- URL: `https://passrider.prod.flightlookup.com/v1/xml/TimeTable/`
-- Subscription Key: `ee573326b2c34c619eadfff56300ba16`
+## Host it
+Deploy the `web/` folder to any static host (Cloudflare Pages, Netlify, Vercel, S3, etc).
 
-## Usage
-Add shortcode to any page/post:
+Example hosted URL:
+- `https://your-domain.com/flight-widget`
 
-```text
-[flight_schedule_timetable]
+Then your widget main page will be:
+- `https://your-domain.com/flight-widget/index.html`
+
+## Embed in any website
+```html
+<script
+  src="https://your-domain.com/flight-widget/embed.js"
+  data-host="https://your-domain.com/flight-widget"
+  data-height="860"
+  data-from="MNL"
+  data-to="HKG"
+></script>
 ```
 
-## Version Log (Append On Every Update)
-Always append a new version section at the top of `CHANGELOG.md` for each update.
+Optional attributes:
+- `data-target="#someContainer"` (mount iframe into an existing element)
+- `data-apiurl="https://passrider.prod.flightlookup.com/v1/xml/TimeTable/"`
+- `data-key="your-subscription-key"`
+- `data-date="2026-02-20"`
 
-Current history summary:
-- 1.2.0: Added GitHub updater integration and update metadata.
-- 1.1.0: Added admin dashboard (KPI, Analytics, Settings) and timetable API integration.
-- 1.0.0: Initial release (UI layouts, loading animation, 7-day/specific-day results, expandable cards).
+## API notes
+- The timetable endpoint returns schedule data, not fare pricing.
+- If browser requests are blocked by CORS, use a backend proxy and point `data-apiurl` to your proxy endpoint.
 
-Detailed log: see `CHANGELOG.md`.
+## Loading animation
+Implemented as requested:
+- start pulse circle
+- line
+- airplane icon moving across line
+- end pulse circle
