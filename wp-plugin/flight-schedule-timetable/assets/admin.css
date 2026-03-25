@@ -1,0 +1,133 @@
+.fst-admin-wrap {
+  max-width: 1160px;
+  margin-top: 20px;
+}
+
+.fst-header {
+  background: linear-gradient(135deg, #0d121e, #1e293b);
+  color: #fff;
+  border-radius: 14px;
+  padding: 20px 22px;
+  box-shadow: 0 8px 24px rgba(13, 18, 30, 0.24);
+  margin-bottom: 16px;
+}
+
+.fst-header h1 {
+  margin: 0 0 6px;
+  color: #fff;
+  font-size: 26px;
+}
+
+.fst-header p {
+  margin: 0;
+  opacity: 0.92;
+}
+
+.fst-tabs {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.fst-tab {
+  border: 1px solid #d1d5db;
+  background: #fff;
+  border-radius: 10px;
+  padding: 10px 16px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.fst-tab.is-active {
+  background: #0b63f6;
+  color: #fff;
+  border-color: #0b63f6;
+}
+
+.fst-panel {
+  display: none;
+}
+
+.fst-panel.is-active {
+  display: block;
+}
+
+.fst-kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 14px;
+}
+
+.fst-kpi-card,
+.fst-card {
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  padding: 16px;
+  box-shadow: 0 2px 10px rgba(13, 18, 30, 0.12);
+}
+
+.fst-kpi-card h3 {
+  margin: 0;
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  color: #6b7280;
+}
+
+.fst-kpi-value {
+  font-size: 34px;
+  line-height: 1.1;
+  margin: 8px 0 0;
+  font-weight: 700;
+  color: #0d121e;
+}
+
+.fst-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.fst-table th,
+.fst-table td {
+  text-align: left;
+  padding: 10px 8px;
+  border-bottom: 1px solid #f1f5f9;
+}
+
+.fst-table th {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  color: #64748b;
+}
+
+.fst-form label {
+  display: grid;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+.fst-form input[type="text"],
+.fst-form input[type="url"],
+.fst-form input[type="number"] {
+  max-width: 700px;
+  width: 100%;
+  border-radius: 8px;
+  border: 1px solid #cbd5e1;
+  padding: 10px 12px;
+}
+
+.fst-checkbox {
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  gap: 8px;
+}
+
+.fst-card pre {
+  background: #0f172a;
+  color: #e2e8f0;
+  padding: 12px;
+  border-radius: 8px;
+  overflow: auto;
+}

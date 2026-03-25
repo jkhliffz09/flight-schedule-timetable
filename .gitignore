@@ -3,3 +3,7 @@
 api.pdf
 layout/
 dist/
+flight-schedule-timetable-plugin.zip
+
+node_modules/
+dist-web/

@@ -2,6 +2,11 @@
 
 All notable changes to this plugin should be appended here.
 
+## [1.1.0] - 2026-03-26
+- Added a WordPress plugin updater wired to GitHub releases for `jkhliffz09/flight-schedule-timetable`.
+- Added the `Update URI` plugin header and a GitHub release metadata fetcher.
+- Added `scripts/release.sh` to bump versions, build assets, package the plugin zip, commit, tag, push, and create a GitHub release.
+
 ## [1.2.0] - 2026-02-20
 - Added GitHub updater class for WordPress plugin update checks.
 - Added `Update URI` plugin header for external update source.
