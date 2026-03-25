@@ -2,6 +2,10 @@
 
 All notable changes to this plugin should be appended here.
 
+## [1.1.3] - 2026-03-26
+- Added pagination for analytics tables with 10 items per page by default.
+- Placed Daily Usage and Top Searched Routes in a two-column layout on wider screens.
+
 ## [1.1.2] - 2026-03-26
 - Added a manual `Check for updates` link to the WordPress plugin row.
 - Added a secure admin action to clear updater cache and force a fresh GitHub update check.
