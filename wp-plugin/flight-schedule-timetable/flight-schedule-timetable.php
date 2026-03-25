@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Flight Schedule Timetable
  * Description: Embed and track the Flight Schedule widget with a custom admin dashboard (KPI, Analytics, Settings, Instructions).
- * Version: 1.1.0
+ * Version: 1.1.1
  * Author: khliffz
  * Update URI: https://github.com/jkhliffz09/flight-schedule-timetable
  * Requires at least: 6.0
@@ -16,9 +16,11 @@ if (!defined('ABSPATH')) {
 require_once __DIR__ . '/includes/class-fst-github-updater.php';
 
 final class FST_Flight_Schedule_Timetable {
-    const VERSION = '1.1.0';
+    const VERSION = '1.1.1';
     const SETTINGS_OPTION = 'fst_settings';
     const STATS_OPTION = 'fst_stats';
+    const DB_VERSION_OPTION = 'fst_db_version';
+    const DB_VERSION = '1.0.0';
     const RECENT_SEARCH_LIMIT = 100;
     const ROUTE_COUNT_LIMIT = 200;
 
@@ -35,6 +37,7 @@ final class FST_Flight_Schedule_Timetable {
         add_action('admin_menu', [$this, 'register_admin_menu']);
         add_action('admin_init', [$this, 'register_settings']);
         add_action('admin_enqueue_scripts', [$this, 'enqueue_admin_assets']);
+        add_action('init', [$this, 'maybe_upgrade_storage']);
 
         add_shortcode('flight_schedule_widget', [$this, 'render_shortcode']);
 
@@ -63,6 +66,9 @@ final class FST_Flight_Schedule_Timetable {
                 'route_counts' => [],
             ]);
         }
+
+        $this->create_analytics_tables();
+        $this->migrate_option_stats_to_tables();
     }
 
     private function default_settings() {
@@ -84,7 +90,331 @@ final class FST_Flight_Schedule_Timetable {
         return wp_parse_args($settings, $this->default_settings());
     }
 
+    public function maybe_upgrade_storage() {
+        $db_version = (string) get_option(self::DB_VERSION_OPTION, '');
+        if ($db_version !== self::DB_VERSION) {
+            $this->create_analytics_tables();
+        }
+
+        if ($this->has_legacy_stats_option() && !$this->table_has_daily_stats_data()) {
+            $this->migrate_option_stats_to_tables();
+        }
+    }
+
+    private function get_table_names() {
+        global $wpdb;
+
+        return [
+            'daily' => $wpdb->prefix . 'fst_daily_stats',
+            'searches' => $wpdb->prefix . 'fst_searches',
+            'routes' => $wpdb->prefix . 'fst_route_counts',
+        ];
+    }
+
+    private function create_analytics_tables() {
+        global $wpdb;
+
+        require_once ABSPATH . 'wp-admin/includes/upgrade.php';
+
+        $tables = $this->get_table_names();
+        $charset_collate = $wpdb->get_charset_collate();
+
+        $sql_daily = "CREATE TABLE {$tables['daily']} (
+            stat_date date NOT NULL,
+            views bigint(20) unsigned NOT NULL DEFAULT 0,
+            shortcode_renders bigint(20) unsigned NOT NULL DEFAULT 0,
+            search_requests bigint(20) unsigned NOT NULL DEFAULT 0,
+            PRIMARY KEY  (stat_date)
+        ) {$charset_collate};";
+
+        $sql_searches = "CREATE TABLE {$tables['searches']} (
+            id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+            time_utc datetime NOT NULL,
+            from_code varchar(16) NOT NULL DEFAULT '',
+            to_code varchar(16) NOT NULL DEFAULT '',
+            travel_date char(8) NOT NULL DEFAULT '',
+            specific_date char(1) NOT NULL DEFAULT 'Y',
+            seven_day char(1) NOT NULL DEFAULT 'N',
+            connection varchar(32) NOT NULL DEFAULT 'AUTO',
+            sort_by varchar(64) NOT NULL DEFAULT 'Departure',
+            time_filter varchar(32) NOT NULL DEFAULT 'ANY',
+            airline varchar(64) NOT NULL DEFAULT '---',
+            result_limit smallint(5) unsigned NOT NULL DEFAULT 100,
+            codeshare char(1) NOT NULL DEFAULT 'N',
+            interline char(1) NOT NULL DEFAULT 'N',
+            language_code varchar(16) NOT NULL DEFAULT 'en',
+            compression varchar(32) NOT NULL DEFAULT 'MOST',
+            PRIMARY KEY  (id),
+            KEY time_utc (time_utc),
+            KEY route_date (from_code, to_code, travel_date)
+        ) {$charset_collate};";
+
+        $sql_routes = "CREATE TABLE {$tables['routes']} (
+            route_key varchar(64) NOT NULL,
+            searches bigint(20) unsigned NOT NULL DEFAULT 0,
+            PRIMARY KEY  (route_key)
+        ) {$charset_collate};";
+
+        dbDelta($sql_daily);
+        dbDelta($sql_searches);
+        dbDelta($sql_routes);
+
+        update_option(self::DB_VERSION_OPTION, self::DB_VERSION, false);
+    }
+
+    private function has_legacy_stats_option() {
+        $stats = get_option(self::STATS_OPTION, null);
+        return is_array($stats) && !empty($stats);
+    }
+
+    private function table_has_daily_stats_data() {
+        global $wpdb;
+
+        $tables = $this->get_table_names();
+        $table_name = $tables['daily'];
+
+        $exists = $wpdb->get_var($wpdb->prepare("SHOW TABLES LIKE %s", $table_name));
+        if ($exists !== $table_name) {
+            return false;
+        }
+
+        $count = $wpdb->get_var("SELECT COUNT(*) FROM {$table_name}");
+        return ((int) $count) > 0;
+    }
+
+    private function upsert_daily_row($day, array $increments) {
+        global $wpdb;
+
+        $tables = $this->get_table_names();
+        $existing = $wpdb->get_row(
+            $wpdb->prepare(
+                "SELECT views, shortcode_renders, search_requests FROM {$tables['daily']} WHERE stat_date = %s",
+                $day
+            ),
+            ARRAY_A
+        );
+
+        $views = (int) ($increments['views'] ?? 0);
+        $renders = (int) ($increments['shortcode_renders'] ?? 0);
+        $searches = (int) ($increments['search_requests'] ?? 0);
+
+        if ($existing) {
+            $views += (int) $existing['views'];
+            $renders += (int) $existing['shortcode_renders'];
+            $searches += (int) $existing['search_requests'];
+        }
+
+        $wpdb->replace(
+            $tables['daily'],
+            [
+                'stat_date' => $day,
+                'views' => $views,
+                'shortcode_renders' => $renders,
+                'search_requests' => $searches,
+            ],
+            ['%s', '%d', '%d', '%d']
+        );
+    }
+
+    private function upsert_route_count($route, $increment = 1) {
+        global $wpdb;
+
+        $tables = $this->get_table_names();
+        $existing = $wpdb->get_var(
+            $wpdb->prepare("SELECT searches FROM {$tables['routes']} WHERE route_key = %s", $route)
+        );
+        $count = (int) $existing + (int) $increment;
+
+        $wpdb->replace(
+            $tables['routes'],
+            [
+                'route_key' => $route,
+                'searches' => $count,
+            ],
+            ['%s', '%d']
+        );
+    }
+
+    private function insert_search_entry(array $entry) {
+        global $wpdb;
+
+        $tables = $this->get_table_names();
+        $wpdb->insert(
+            $tables['searches'],
+            [
+                'time_utc' => gmdate('Y-m-d H:i:s', strtotime((string) $entry['time_utc'])),
+                'from_code' => (string) $entry['from'],
+                'to_code' => (string) $entry['to'],
+                'travel_date' => (string) $entry['date'],
+                'specific_date' => (string) $entry['specificDate'],
+                'seven_day' => (string) $entry['sevenDay'],
+                'connection' => (string) $entry['connection'],
+                'sort_by' => (string) $entry['sort'],
+                'time_filter' => (string) $entry['time'],
+                'airline' => (string) $entry['airline'],
+                'result_limit' => (int) $entry['result'],
+                'codeshare' => (string) $entry['codeshare'],
+                'interline' => (string) $entry['interline'],
+                'language_code' => (string) $entry['language'],
+                'compression' => (string) $entry['compression'],
+            ],
+            ['%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%d', '%s', '%s', '%s', '%s']
+        );
+    }
+
+    private function migrate_option_stats_to_tables() {
+        $stats = get_option(self::STATS_OPTION, []);
+        if (!is_array($stats) || empty($stats)) {
+            return;
+        }
+
+        $by_day = isset($stats['by_day']) && is_array($stats['by_day']) ? $stats['by_day'] : [];
+        foreach ($by_day as $day => $row) {
+            $this->upsert_daily_row($day, [
+                'views' => (int) ($row['views'] ?? 0),
+                'shortcode_renders' => (int) ($row['shortcode_renders'] ?? 0),
+                'search_requests' => (int) ($row['search_requests'] ?? 0),
+            ]);
+        }
+
+        $recent_searches = isset($stats['recent_searches']) && is_array($stats['recent_searches']) ? array_reverse($stats['recent_searches']) : [];
+        foreach ($recent_searches as $entry) {
+            if (!is_array($entry)) {
+                continue;
+            }
+
+            $normalized = [
+                'time_utc' => (string) ($entry['time_utc'] ?? gmdate('c')),
+                'from' => strtoupper(sanitize_text_field((string) ($entry['from'] ?? ''))),
+                'to' => strtoupper(sanitize_text_field((string) ($entry['to'] ?? ''))),
+                'date' => preg_replace('/[^0-9]/', '', (string) ($entry['date'] ?? '')),
+                'specificDate' => $this->normalize_yn($entry['specificDate'] ?? 'Y', 'Y'),
+                'sevenDay' => $this->normalize_yn($entry['sevenDay'] ?? 'N', 'N'),
+                'connection' => sanitize_text_field((string) ($entry['connection'] ?? 'AUTO')),
+                'sort' => sanitize_text_field((string) ($entry['sort'] ?? 'Departure')),
+                'time' => sanitize_text_field((string) ($entry['time'] ?? 'ANY')),
+                'airline' => sanitize_text_field((string) ($entry['airline'] ?? '---')),
+                'result' => (string) max(1, min(500, (int) ($entry['result'] ?? 100))),
+                'codeshare' => $this->normalize_yn($entry['codeshare'] ?? 'N', 'N'),
+                'interline' => $this->normalize_yn($entry['interline'] ?? 'N', 'N'),
+                'language' => sanitize_text_field((string) ($entry['language'] ?? 'en')),
+                'compression' => sanitize_text_field((string) ($entry['compression'] ?? 'MOST')),
+            ];
+
+            $this->insert_search_entry($normalized);
+        }
+
+        $route_counts = isset($stats['route_counts']) && is_array($stats['route_counts']) ? $stats['route_counts'] : [];
+        foreach ($route_counts as $route => $count) {
+            $route = sanitize_text_field((string) $route);
+            if ($route === '') {
+                continue;
+            }
+
+            $this->upsert_route_count($route, (int) $count);
+        }
+    }
+
     private function get_stats() {
+        global $wpdb;
+
+        $tables = $this->get_table_names();
+        $daily_table = $tables['daily'];
+        $searches_table = $tables['searches'];
+        $routes_table = $tables['routes'];
+
+        $daily_exists = $wpdb->get_var($wpdb->prepare("SHOW TABLES LIKE %s", $daily_table)) === $daily_table;
+        $searches_exists = $wpdb->get_var($wpdb->prepare("SHOW TABLES LIKE %s", $searches_table)) === $searches_table;
+        $routes_exists = $wpdb->get_var($wpdb->prepare("SHOW TABLES LIKE %s", $routes_table)) === $routes_table;
+
+        if ($daily_exists && $searches_exists && $routes_exists) {
+            $daily_rows = $wpdb->get_results(
+                "SELECT stat_date, views, shortcode_renders, search_requests
+                 FROM {$daily_table}
+                 ORDER BY stat_date DESC",
+                ARRAY_A
+            );
+
+            $by_day = [];
+            $totals = [
+                'views' => 0,
+                'shortcode_renders' => 0,
+                'search_requests' => 0,
+            ];
+
+            foreach ($daily_rows as $row) {
+                $day = (string) $row['stat_date'];
+                $views = (int) $row['views'];
+                $renders = (int) $row['shortcode_renders'];
+                $searches = (int) $row['search_requests'];
+
+                $by_day[$day] = [
+                    'views' => $views,
+                    'shortcode_renders' => $renders,
+                    'search_requests' => $searches,
+                ];
+
+                $totals['views'] += $views;
+                $totals['shortcode_renders'] += $renders;
+                $totals['search_requests'] += $searches;
+            }
+
+            $recent_rows = $wpdb->get_results(
+                $wpdb->prepare(
+                    "SELECT time_utc, from_code, to_code, travel_date, specific_date, seven_day, connection, sort_by, time_filter, airline, result_limit, codeshare, interline, language_code, compression
+                     FROM {$searches_table}
+                     ORDER BY time_utc DESC, id DESC
+                     LIMIT %d",
+                    self::RECENT_SEARCH_LIMIT
+                ),
+                ARRAY_A
+            );
+
+            $recent_searches = [];
+            foreach ($recent_rows as $row) {
+                $recent_searches[] = [
+                    'time_utc' => gmdate('c', strtotime((string) $row['time_utc'] . ' UTC')),
+                    'from' => (string) $row['from_code'],
+                    'to' => (string) $row['to_code'],
+                    'date' => (string) $row['travel_date'],
+                    'specificDate' => (string) $row['specific_date'],
+                    'sevenDay' => (string) $row['seven_day'],
+                    'connection' => (string) $row['connection'],
+                    'sort' => (string) $row['sort_by'],
+                    'time' => (string) $row['time_filter'],
+                    'airline' => (string) $row['airline'],
+                    'result' => (string) $row['result_limit'],
+                    'codeshare' => (string) $row['codeshare'],
+                    'interline' => (string) $row['interline'],
+                    'language' => (string) $row['language_code'],
+                    'compression' => (string) $row['compression'],
+                ];
+            }
+
+            $route_rows = $wpdb->get_results(
+                $wpdb->prepare(
+                    "SELECT route_key, searches
+                     FROM {$routes_table}
+                     ORDER BY searches DESC, route_key ASC
+                     LIMIT %d",
+                    self::ROUTE_COUNT_LIMIT
+                ),
+                ARRAY_A
+            );
+
+            $route_counts = [];
+            foreach ($route_rows as $row) {
+                $route_counts[(string) $row['route_key']] = (int) $row['searches'];
+            }
+
+            return [
+                'totals' => $totals,
+                'by_day' => $by_day,
+                'recent_searches' => $recent_searches,
+                'route_counts' => $route_counts,
+            ];
+        }
+
         $stats = get_option(self::STATS_OPTION, []);
         if (!is_array($stats)) {
             $stats = [];
@@ -128,25 +458,8 @@ final class FST_Flight_Schedule_Timetable {
             return;
         }
 
-        $stats = $this->get_stats();
         $day = gmdate('Y-m-d');
-
-        $stats['totals'][$event] = (int) $stats['totals'][$event] + 1;
-
-        if (!isset($stats['by_day'][$day]) || !is_array($stats['by_day'][$day])) {
-            $stats['by_day'][$day] = [
-                'views' => 0,
-                'shortcode_renders' => 0,
-                'search_requests' => 0,
-            ];
-        }
-        if (!isset($stats['by_day'][$day]['search_requests'])) {
-            $stats['by_day'][$day]['search_requests'] = 0;
-        }
-
-        $stats['by_day'][$day][$event] = (int) $stats['by_day'][$day][$event] + 1;
-
-        update_option(self::STATS_OPTION, $stats, false);
+        $this->upsert_daily_row($day, [$event => 1]);
     }
 
     private function normalize_yn($value, $default = 'N') {
@@ -158,7 +471,6 @@ final class FST_Flight_Schedule_Timetable {
     }
 
     private function record_search_analytics(array $payload) {
-        $stats = $this->get_stats();
         $day = gmdate('Y-m-d');
 
         $from = strtoupper(sanitize_text_field((string) ($payload['from'] ?? '')));
@@ -185,31 +497,13 @@ final class FST_Flight_Schedule_Timetable {
             'compression' => sanitize_text_field((string) ($payload['compression'] ?? 'MOST')),
         ];
 
-        $stats['totals']['search_requests'] = (int) ($stats['totals']['search_requests'] ?? 0) + 1;
-
-        if (!isset($stats['by_day'][$day]) || !is_array($stats['by_day'][$day])) {
-            $stats['by_day'][$day] = [
-                'views' => 0,
-                'shortcode_renders' => 0,
-                'search_requests' => 0,
-            ];
-        }
-        if (!isset($stats['by_day'][$day]['search_requests'])) {
-            $stats['by_day'][$day]['search_requests'] = 0;
-        }
-        $stats['by_day'][$day]['search_requests'] = (int) $stats['by_day'][$day]['search_requests'] + 1;
-
-        array_unshift($stats['recent_searches'], $entry);
-        $stats['recent_searches'] = array_slice($stats['recent_searches'], 0, self::RECENT_SEARCH_LIMIT);
+        $this->upsert_daily_row($day, ['search_requests' => 1]);
+        $this->insert_search_entry($entry);
 
         $route = trim($from . '→' . $to, "→ \t\n\r\0\x0B");
         if ($route !== '') {
-            $stats['route_counts'][$route] = (int) ($stats['route_counts'][$route] ?? 0) + 1;
-            arsort($stats['route_counts']);
-            $stats['route_counts'] = array_slice($stats['route_counts'], 0, self::ROUTE_COUNT_LIMIT, true);
+            $this->upsert_route_count($route, 1);
         }
-
-        update_option(self::STATS_OPTION, $stats, false);
     }
 
     public function register_admin_menu() {

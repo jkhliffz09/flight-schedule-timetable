@@ -2,6 +2,11 @@
 
 All notable changes to this plugin should be appended here.
 
+## [1.1.1] - 2026-03-26
+- Added custom analytics database tables: `fst_daily_stats`, `fst_searches`, and `fst_route_counts`.
+- Added automatic migration to backfill the new tables from the legacy `fst_stats` option.
+- Switched analytics reads and writes to the custom tables while keeping the legacy option as fallback data.
+
 ## [1.1.0] - 2026-03-26
 - Added a WordPress plugin updater wired to GitHub releases for `jkhliffz09/flight-schedule-timetable`.
 - Added the `Update URI` plugin header and a GitHub release metadata fetcher.
