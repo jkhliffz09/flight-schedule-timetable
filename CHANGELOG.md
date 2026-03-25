@@ -2,6 +2,11 @@
 
 All notable changes to this plugin should be appended here.
 
+## [1.1.2] - 2026-03-26
+- Added a manual `Check for updates` link to the WordPress plugin row.
+- Added a secure admin action to clear updater cache and force a fresh GitHub update check.
+- Added admin notices to report whether a newer GitHub release is available.
+
 ## [1.1.1] - 2026-03-26
 - Added custom analytics database tables: `fst_daily_stats`, `fst_searches`, and `fst_route_counts`.
 - Added automatic migration to backfill the new tables from the legacy `fst_stats` option.

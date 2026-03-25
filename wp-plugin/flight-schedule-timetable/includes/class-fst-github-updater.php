@@ -23,6 +23,9 @@ final class FST_GitHub_Updater {
         add_filter('pre_set_site_transient_update_plugins', [$this, 'inject_update']);
         add_filter('plugins_api', [$this, 'inject_plugin_info'], 20, 3);
         add_filter('upgrader_post_install', [$this, 'after_install'], 10, 3);
+        add_filter('plugin_row_meta', [$this, 'plugin_row_meta'], 10, 2);
+        add_action('admin_post_fst_check_github_update', [$this, 'handle_manual_check']);
+        add_action('admin_notices', [$this, 'render_manual_check_notice']);
     }
 
     public function inject_update($transient) {
@@ -105,6 +108,94 @@ final class FST_GitHub_Updater {
         }
 
         return $response;
+    }
+
+    public function plugin_row_meta($links, $file) {
+        if ($file !== $this->plugin_basename || !current_user_can('update_plugins')) {
+            return $links;
+        }
+
+        $check_url = wp_nonce_url(
+            admin_url('admin-post.php?action=fst_check_github_update&plugin=' . rawurlencode($this->plugin_basename)),
+            'fst_check_github_update_' . $this->plugin_basename
+        );
+
+        $links[] = sprintf(
+            '<a href="%s">%s</a>',
+            esc_url($check_url),
+            esc_html__('Check for updates', 'flight-schedule-timetable')
+        );
+
+        return $links;
+    }
+
+    public function handle_manual_check() {
+        if (!current_user_can('update_plugins')) {
+            wp_die(esc_html__('You are not allowed to update plugins.', 'flight-schedule-timetable'));
+        }
+
+        $plugin = isset($_GET['plugin']) ? sanitize_text_field(wp_unslash($_GET['plugin'])) : '';
+        if ($plugin !== $this->plugin_basename) {
+            wp_safe_redirect(admin_url('plugins.php'));
+            exit;
+        }
+
+        check_admin_referer('fst_check_github_update_' . $this->plugin_basename);
+
+        delete_site_transient($this->cache_key);
+        delete_site_transient('update_plugins');
+        wp_clean_plugins_cache(true);
+        wp_update_plugins();
+
+        $transient = get_site_transient('update_plugins');
+        $status = 'current';
+
+        if (is_object($transient) && !empty($transient->response[$this->plugin_basename])) {
+            $status = 'available';
+        } elseif (is_object($transient) && !empty($transient->no_update[$this->plugin_basename])) {
+            $status = 'current';
+        }
+
+        $redirect = add_query_arg(
+            [
+                'fst_update_checked' => 1,
+                'fst_update_status' => $status,
+                'plugin_status' => 'all',
+                'paged' => 1,
+                's' => '',
+            ],
+            admin_url('plugins.php')
+        );
+
+        wp_safe_redirect($redirect);
+        exit;
+    }
+
+    public function render_manual_check_notice() {
+        if (!is_admin() || !current_user_can('update_plugins')) {
+            return;
+        }
+
+        if (empty($_GET['fst_update_checked'])) {
+            return;
+        }
+
+        $screen = function_exists('get_current_screen') ? get_current_screen() : null;
+        if (!$screen || $screen->id !== 'plugins') {
+            return;
+        }
+
+        $status = isset($_GET['fst_update_status']) ? sanitize_key(wp_unslash($_GET['fst_update_status'])) : 'current';
+        $message = __('GitHub update check completed. No newer version is available.', 'flight-schedule-timetable');
+
+        if ($status === 'available') {
+            $message = __('GitHub update check completed. A newer version is available below.', 'flight-schedule-timetable');
+        }
+
+        printf(
+            '<div class="notice notice-info is-dismissible"><p>%s</p></div>',
+            esc_html($message)
+        );
     }
 
     private function get_latest_release() {
