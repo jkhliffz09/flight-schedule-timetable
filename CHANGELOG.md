@@ -2,6 +2,10 @@
 
 All notable changes to this plugin should be appended here.
 
+## [1.1.4] - 2026-03-26
+- Changed analytics pagination to client-side controls so page changes do not reload the WordPress admin page.
+- Preserved the active admin tab using the URL hash, keeping the Analytics tab active during pagination.
+
 ## [1.1.3] - 2026-03-26
 - Added pagination for analytics tables with 10 items per page by default.
 - Placed Daily Usage and Top Searched Routes in a two-column layout on wider screens.

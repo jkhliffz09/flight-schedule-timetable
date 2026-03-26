@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Flight Schedule Timetable
  * Description: Embed and track the Flight Schedule widget with a custom admin dashboard (KPI, Analytics, Settings, Instructions).
- * Version: 1.1.3
+ * Version: 1.1.4
  * Author: khliffz
  * Update URI: https://github.com/jkhliffz09/flight-schedule-timetable
  * Requires at least: 6.0
@@ -16,7 +16,7 @@ if (!defined('ABSPATH')) {
 require_once __DIR__ . '/includes/class-fst-github-updater.php';
 
 final class FST_Flight_Schedule_Timetable {
-    const VERSION = '1.1.3';
+    const VERSION = '1.1.4';
     const SETTINGS_OPTION = 'fst_settings';
     const STATS_OPTION = 'fst_stats';
     const DB_VERSION_OPTION = 'fst_db_version';
@@ -471,46 +471,25 @@ final class FST_Flight_Schedule_Timetable {
         return $default;
     }
 
-    private function get_page_number($param) {
-        $page = isset($_GET[$param]) ? (int) $_GET[$param] : 1;
-        return max(1, $page);
-    }
-
-    private function paginate_items(array $items, $page, $per_page) {
-        $total_items = count($items);
-        $total_pages = max(1, (int) ceil($total_items / $per_page));
-        $page = min(max(1, $page), $total_pages);
-        $offset = ($page - 1) * $per_page;
-
-        return [
-            'items' => array_slice($items, $offset, $per_page, true),
-            'page' => $page,
-            'total_pages' => $total_pages,
-            'total_items' => $total_items,
-        ];
-    }
-
-    private function render_pagination($param, array $pagination) {
-        if (($pagination['total_pages'] ?? 1) <= 1) {
+    private function render_pagination($target_id, $total_items, $per_page = self::ANALYTICS_PER_PAGE) {
+        $total_pages = max(1, (int) ceil(((int) $total_items) / $per_page));
+        if ($total_pages <= 1) {
             return;
         }
-
-        $current = (int) $pagination['page'];
-        $total_pages = (int) $pagination['total_pages'];
 
         echo '<div class="fst-pagination">';
 
         for ($page = 1; $page <= $total_pages; $page++) {
-            $url = add_query_arg([$param => $page]);
             $class = 'fst-page-link';
-            if ($page === $current) {
+            if ($page === 1) {
                 $class .= ' is-active';
             }
 
             printf(
-                '<a class="%s" href="%s">%d</a>',
+                '<button class="%s" type="button" data-fst-page-target="%s" data-fst-page="%d">%d</button>',
                 esc_attr($class),
-                esc_url($url),
+                esc_attr($target_id),
+                (int) $page,
                 (int) $page
             );
         }
@@ -641,14 +620,7 @@ final class FST_Flight_Schedule_Timetable {
         $recent_searches = array_slice(is_array($stats['recent_searches']) ? $stats['recent_searches'] : [], 0, 25);
         $route_counts = is_array($stats['route_counts']) ? $stats['route_counts'] : [];
         arsort($route_counts);
-
-        $daily_page = $this->get_page_number('fst_daily_page');
-        $routes_page = $this->get_page_number('fst_routes_page');
-        $recent_page = $this->get_page_number('fst_recent_page');
-
-        $daily_pagination = $this->paginate_items($days, $daily_page, self::ANALYTICS_PER_PAGE);
-        $routes_pagination = $this->paginate_items(array_keys($route_counts), $routes_page, self::ANALYTICS_PER_PAGE);
-        $recent_pagination = $this->paginate_items($recent_searches, $recent_page, self::ANALYTICS_PER_PAGE);
+        $route_keys = array_keys($route_counts);
         ?>
         <div class="wrap fst-admin-wrap">
             <div class="fst-header">
@@ -702,16 +674,17 @@ final class FST_Flight_Schedule_Timetable {
                                     <th>Search Requests</th>
                                 </tr>
                             </thead>
-                            <tbody>
-                                <?php if (empty($daily_pagination['items'])) : ?>
+                            <tbody id="fst-daily-usage-table">
+                                <?php if (empty($days)) : ?>
                                     <tr>
                                         <td colspan="4">No analytics data yet.</td>
                                     </tr>
                                 <?php else : ?>
-                                    <?php foreach ($daily_pagination['items'] as $day) :
+                                    <?php foreach ($days as $index => $day) :
+                                        $page = (int) floor($index / self::ANALYTICS_PER_PAGE) + 1;
                                         $row = $stats['by_day'][$day];
                                         ?>
-                                        <tr>
+                                        <tr data-fst-page-row="<?php echo esc_attr('fst-daily-usage-table'); ?>" data-fst-page="<?php echo esc_attr((string) $page); ?>"<?php if ($page > 1) : ?> hidden<?php endif; ?>>
                                             <td><?php echo esc_html($day); ?></td>
                                             <td><?php echo esc_html((string) (int) ($row['views'] ?? 0)); ?></td>
                                             <td><?php echo esc_html((string) (int) ($row['shortcode_renders'] ?? 0)); ?></td>
@@ -721,7 +694,7 @@ final class FST_Flight_Schedule_Timetable {
                                 <?php endif; ?>
                             </tbody>
                         </table>
-                        <?php $this->render_pagination('fst_daily_page', $daily_pagination); ?>
+                        <?php $this->render_pagination('fst-daily-usage-table', count($days)); ?>
                     </div>
 
                     <div class="fst-card">
@@ -733,14 +706,16 @@ final class FST_Flight_Schedule_Timetable {
                                     <th>Searches</th>
                                 </tr>
                             </thead>
-                            <tbody>
-                                <?php if (empty($routes_pagination['items'])) : ?>
+                            <tbody id="fst-route-counts-table">
+                                <?php if (empty($route_keys)) : ?>
                                     <tr>
                                         <td colspan="2">No route search data yet.</td>
                                     </tr>
                                 <?php else : ?>
-                                    <?php foreach ($routes_pagination['items'] as $route) : ?>
-                                        <tr>
+                                    <?php foreach ($route_keys as $index => $route) :
+                                        $page = (int) floor($index / self::ANALYTICS_PER_PAGE) + 1;
+                                        ?>
+                                        <tr data-fst-page-row="<?php echo esc_attr('fst-route-counts-table'); ?>" data-fst-page="<?php echo esc_attr((string) $page); ?>"<?php if ($page > 1) : ?> hidden<?php endif; ?>>
                                             <td><?php echo esc_html((string) $route); ?></td>
                                             <td><?php echo esc_html((string) (int) ($route_counts[$route] ?? 0)); ?></td>
                                         </tr>
@@ -748,7 +723,7 @@ final class FST_Flight_Schedule_Timetable {
                                 <?php endif; ?>
                             </tbody>
                         </table>
-                        <?php $this->render_pagination('fst_routes_page', $routes_pagination); ?>
+                        <?php $this->render_pagination('fst-route-counts-table', count($route_keys)); ?>
                     </div>
                 </div>
 
@@ -770,16 +745,17 @@ final class FST_Flight_Schedule_Timetable {
                                 <th>Interline</th>
                             </tr>
                         </thead>
-                        <tbody>
-                            <?php if (empty($recent_pagination['items'])) : ?>
+                        <tbody id="fst-recent-searches-table">
+                            <?php if (empty($recent_searches)) : ?>
                                 <tr>
                                     <td colspan="11">No search parameter data yet.</td>
                                 </tr>
                             <?php else : ?>
-                                <?php foreach ($recent_pagination['items'] as $item) :
+                                <?php foreach ($recent_searches as $index => $item) :
+                                    $page = (int) floor($index / self::ANALYTICS_PER_PAGE) + 1;
                                     $route = trim((string) (($item['from'] ?? '') . '→' . ($item['to'] ?? '')), "→ \t\n\r\0\x0B");
                                     ?>
-                                    <tr>
+                                    <tr data-fst-page-row="<?php echo esc_attr('fst-recent-searches-table'); ?>" data-fst-page="<?php echo esc_attr((string) $page); ?>"<?php if ($page > 1) : ?> hidden<?php endif; ?>>
                                         <td><?php echo esc_html((string) ($item['time_utc'] ?? '')); ?></td>
                                         <td><?php echo esc_html($route); ?></td>
                                         <td><?php echo esc_html((string) ($item['date'] ?? '')); ?></td>
@@ -796,7 +772,7 @@ final class FST_Flight_Schedule_Timetable {
                             <?php endif; ?>
                         </tbody>
                     </table>
-                    <?php $this->render_pagination('fst_recent_page', $recent_pagination); ?>
+                    <?php $this->render_pagination('fst-recent-searches-table', count($recent_searches)); ?>
                 </div>
             </section>
 
