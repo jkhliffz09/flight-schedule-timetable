@@ -2,6 +2,10 @@
 
 All notable changes to this plugin should be appended here.
 
+## [1.1.5] - 2026-03-26
+- Fixed the plugin updater post-install hook to return the updated install result, preserving the correct plugin destination after upgrades.
+- Prepared a fresh manual reinstall package for recovering sites affected by the broken update flow.
+
 ## [1.1.4] - 2026-03-26
 - Changed analytics pagination to client-side controls so page changes do not reload the WordPress admin page.
 - Preserved the active admin tab using the URL hash, keeping the Analytics tab active during pagination.

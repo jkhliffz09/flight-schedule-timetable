@@ -92,7 +92,7 @@ final class FST_GitHub_Updater {
         }
 
         if (empty($result['destination']) || empty($result['local_destination'])) {
-            return $response;
+            return $result;
         }
 
         global $wp_filesystem;
@@ -107,7 +107,7 @@ final class FST_GitHub_Updater {
             activate_plugin($hook_extra['plugin']);
         }
 
-        return $response;
+        return $result;
     }
 
     public function plugin_row_meta($links, $file) {
