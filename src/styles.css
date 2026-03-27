@@ -320,17 +320,19 @@ body {
 @media (max-width: 767px) {
   .fst-advanced-hint {
     top: 50% !important;
-    right: 48px !important;
+    right: 30px !important;
+    left: auto !important;
     transform: translateY(-50%);
     animation: fstHintFloatMobile 1800ms ease-in-out infinite;
   }
 
   .fst-advanced-hint-arrow {
-    right: -8px;
+    left: -7px;
+    right: auto;
     bottom: 50%;
-    width: 16px;
-    height: 16px;
-    transform: translateY(50%) rotate(-90deg);
+    width: 14px;
+    height: 14px;
+    transform: translateY(50%) rotate(90deg);
   }
 }
 

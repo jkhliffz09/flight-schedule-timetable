@@ -994,7 +994,7 @@ function App() {
   return (
     <main className="fst-bg min-h-screen text-black">
       <div className="mx-auto max-w-6xl p-4 md:p-8">
-        <section className="fst-glass mt-20 rounded-2xl p-3 shadow-[0_2px_10px_rgba(13,18,30,0.18)] md:mt-0 md:p-4">
+        <section className="fst-glass mt-20 rounded-2xl p-3 shadow-[0_2px_10px_rgba(13,18,30,0.18)] md:mt-5 md:p-4">
           <form className="space-y-3" onSubmit={onSubmit}>
             <input type="hidden" name="showCodeshare" value={form.showCodeshare} />
             <input type="hidden" name="interline" value={form.interline} />
