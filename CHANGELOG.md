@@ -2,6 +2,10 @@
 
 All notable changes to this plugin should be appended here.
 
+## [1.1.7] - 2026-03-27
+- Removed the custom updater post-install hook that could interfere with WordPress core plugin replacement during updates.
+- Updated the form tooltip to use only the existing chevron button and default the date to the viewer's local day.
+
 ## [1.1.6] - 2026-03-27
 - Removed the expanded-result layover/change-planes separator text and divider lines because the message was not reliably accurate for through flights.
 - Rebuilt and redeployed the widget bundle.

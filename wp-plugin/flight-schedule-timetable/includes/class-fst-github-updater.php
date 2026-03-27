@@ -22,7 +22,6 @@ final class FST_GitHub_Updater {
 
         add_filter('pre_set_site_transient_update_plugins', [$this, 'inject_update']);
         add_filter('plugins_api', [$this, 'inject_plugin_info'], 20, 3);
-        add_filter('upgrader_post_install', [$this, 'after_install'], 10, 3);
         add_filter('plugin_row_meta', [$this, 'plugin_row_meta'], 10, 2);
         add_action('admin_post_fst_check_github_update', [$this, 'handle_manual_check']);
         add_action('admin_notices', [$this, 'render_manual_check_notice']);
@@ -84,30 +83,6 @@ final class FST_GitHub_Updater {
             'requires' => '6.0',
             'requires_php' => '7.4',
         ];
-    }
-
-    public function after_install($response, $hook_extra, $result) {
-        if (empty($hook_extra['plugin']) || $hook_extra['plugin'] !== $this->plugin_basename) {
-            return $response;
-        }
-
-        if (empty($result['destination']) || empty($result['local_destination'])) {
-            return $result;
-        }
-
-        global $wp_filesystem;
-
-        $proper_destination = trailingslashit($result['local_destination']) . dirname($this->plugin_basename);
-        if ($result['destination'] !== $proper_destination && !empty($wp_filesystem)) {
-            $wp_filesystem->move($result['destination'], $proper_destination, true);
-            $result['destination'] = $proper_destination;
-        }
-
-        if (!empty($hook_extra['plugin'])) {
-            activate_plugin($hook_extra['plugin']);
-        }
-
-        return $result;
     }
 
     public function plugin_row_meta($links, $file) {

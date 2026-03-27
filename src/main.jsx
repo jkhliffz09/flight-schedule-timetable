@@ -29,6 +29,12 @@ import {
   faCircle
 } from "@fortawesome/free-solid-svg-icons";
 
+function getLocalISODate() {
+  const now = new Date();
+  const local = new Date(now.getTime() - now.getTimezoneOffset() * 60000);
+  return local.toISOString().slice(0, 10);
+}
+
 const defaults = {
   apiUrl: "https://services.flightlookup.com/v1/xml/TimeTable/",
   proxyUrl: "",
@@ -36,7 +42,7 @@ const defaults = {
   result: "100",
   from: "",
   to: "",
-  date: new Date().toISOString().slice(0, 10),
+  date: getLocalISODate(),
   connection: "AUTO",
   sort: "Departure",
   time: "ANY",
@@ -1086,14 +1092,24 @@ function App() {
               <button className="group h-12 inline-flex items-center justify-center gap-2 rounded-xl border border-black bg-white px-5 text-sm font-bold text-black transition hover:scale-[1.01] hover:border-blue-600 hover:bg-blue-600 hover:text-white">
                 <Icon name="Search" size={16} className="transition group-hover:rotate-6" />Search
               </button>
-              <button
-                type="button"
-                className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-black bg-white transition"
-                aria-label={showAdvanced ? "Hide advanced fields" : "Show advanced fields"}
-                onClick={() => setShowAdvanced((v) => !v)}
-              >
-                <Icon name={showAdvanced ? "ChevronUp" : "ChevronDown"} size={16} />
-              </button>
+              <div className="relative flex items-center justify-center">
+                {!showAdvanced && (
+                  <div className="fst-advanced-hint pointer-events-none absolute -top-16 right-0 z-20 whitespace-nowrap rounded-2xl bg-neutral-200 px-4 py-2 text-center text-xs font-semibold text-black shadow-lg" aria-hidden="true">
+                    Click Here For
+                    <br />
+                    Advanced Fields
+                    <span className="fst-advanced-hint-arrow" />
+                  </div>
+                )}
+                <button
+                  type="button"
+                  className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-black bg-white transition"
+                  aria-label={showAdvanced ? "Hide advanced fields" : "Show advanced fields"}
+                  onClick={() => setShowAdvanced((v) => !v)}
+                >
+                  <Icon name={showAdvanced ? "ChevronUp" : "ChevronDown"} size={16} />
+                </button>
+              </div>
             </div>
 
             <div
