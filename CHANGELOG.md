@@ -2,6 +2,10 @@
 
 All notable changes to this plugin should be appended here.
 
+## [1.1.8] - 2026-03-27
+- Added spacing above the form card so the advanced-fields tooltip is not clipped.
+- Moved the advanced-fields tooltip beside the chevron on mobile and increased mobile advanced-panel height so hidden fields stay inside the card.
+
 ## [1.1.7] - 2026-03-27
 - Removed the custom updater post-install hook that could interfere with WordPress core plugin replacement during updates.
 - Updated the form tooltip to use only the existing chevron button and default the date to the viewer's local day.

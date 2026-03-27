@@ -994,7 +994,7 @@ function App() {
   return (
     <main className="fst-bg min-h-screen text-black">
       <div className="mx-auto max-w-6xl p-4 md:p-8">
-        <section className="fst-glass rounded-2xl p-3 shadow-[0_2px_10px_rgba(13,18,30,0.18)] md:p-4">
+        <section className="fst-glass mt-20 rounded-2xl p-3 shadow-[0_2px_10px_rgba(13,18,30,0.18)] md:mt-0 md:p-4">
           <form className="space-y-3" onSubmit={onSubmit}>
             <input type="hidden" name="showCodeshare" value={form.showCodeshare} />
             <input type="hidden" name="interline" value={form.interline} />
@@ -1114,7 +1114,7 @@ function App() {
 
             <div
               className={`transition-all duration-300 ease-in-out ${
-                showAdvanced ? "max-h-[520px] overflow-visible opacity-100" : "max-h-0 overflow-hidden opacity-0"
+                showAdvanced ? "max-h-[980px] overflow-visible opacity-100 md:max-h-[520px]" : "max-h-0 overflow-hidden opacity-0"
               }`}
             >
               <div className="space-y-3 pt-1">

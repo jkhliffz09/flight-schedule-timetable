@@ -316,3 +316,30 @@ body {
     transform: translateY(-8px);
   }
 }
+
+@media (max-width: 767px) {
+  .fst-advanced-hint {
+    top: 50% !important;
+    right: 48px !important;
+    transform: translateY(-50%);
+    animation: fstHintFloatMobile 1800ms ease-in-out infinite;
+  }
+
+  .fst-advanced-hint-arrow {
+    right: -8px;
+    bottom: 50%;
+    width: 16px;
+    height: 16px;
+    transform: translateY(50%) rotate(-90deg);
+  }
+}
+
+@keyframes fstHintFloatMobile {
+  0%,
+  100% {
+    transform: translateY(-50%);
+  }
+  50% {
+    transform: translateY(calc(-50% - 6px));
+  }
+}
