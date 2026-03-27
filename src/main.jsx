@@ -1078,7 +1078,7 @@ function App() {
           destinationCode: summaryMeta.destinationCode,
           totalResults: sortedFlights.length
         },
-        results: sortedFlights.map((flight) => ({
+        results: sortedFlights.slice(0, 10).map((flight) => ({
           depTime: flight.depTime,
           depDayIndicator: flight.depDayIndicator,
           depCode: flight.depCode,
@@ -1106,8 +1106,7 @@ function App() {
             arrTerminal: segment.arrTerminal,
             duration: segment.duration
           }))
-        })),
-        pageUrl: window.location.href
+        }))
       }
     : null;
 
@@ -1178,7 +1177,7 @@ function App() {
   return (
     <main className="fst-bg min-h-screen text-black">
       <div className="mx-auto max-w-6xl p-4 md:p-8">
-        <section className="fst-glass mt-20 rounded-2xl p-3 shadow-[0_2px_10px_rgba(13,18,30,0.18)] md:mt-5 md:p-4">
+        <section className="fst-glass fst-form-shell mt-20 rounded-2xl p-3 shadow-[0_2px_10px_rgba(13,18,30,0.18)] md:mt-5 md:p-4">
           <form className="space-y-3" onSubmit={onSubmit}>
             <input type="hidden" name="showCodeshare" value={form.showCodeshare} />
             <input type="hidden" name="interline" value={form.interline} />
@@ -1798,12 +1797,11 @@ function App() {
         )}
 
         {showEmailModal && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/35 px-4">
-            <div className="w-full max-w-md rounded-2xl bg-white p-5 shadow-[0_16px_48px_rgba(13,18,30,0.24)]">
+          <div className="fixed inset-0 z-50 overflow-y-auto bg-black/35 px-4 py-6 md:py-10">
+            <div className="mx-auto w-full max-w-md rounded-2xl bg-white p-5 shadow-[0_16px_48px_rgba(13,18,30,0.24)]">
               <div className="mb-4 flex items-start justify-between gap-4">
                 <div>
                   <h3 className="text-lg font-bold text-black">Email Schedule</h3>
-                  <p className="mt-1 text-sm text-black/70">Send the current filtered results using `feedback@passrider.com`.</p>
                 </div>
                 <button
                   type="button"

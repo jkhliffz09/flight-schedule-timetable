@@ -1,3 +1,8 @@
+## [1.1.11] - 2026-03-28
+- Made the search form sticky at the top of the widget while scrolling.
+- Moved the email modal to a top-aligned, scroll-safe layout and removed the extra explanatory text.
+- Limited emailed schedules to 10 results and removed the source footer from the email output.
+
 ## [1.1.10] - 2026-03-27
 - Removed the duplicate `[n] Flights Found` heading below the result filters.
 - Added print behavior that temporarily expands all filtered results for printing, then collapses them after print.

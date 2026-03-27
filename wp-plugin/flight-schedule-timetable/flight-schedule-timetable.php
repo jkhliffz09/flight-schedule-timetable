@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Flight Schedule Timetable
  * Description: Embed and track the Flight Schedule widget with a custom admin dashboard (KPI, Analytics, Settings, Instructions).
- * Version: 1.1.10
+ * Version: 1.1.11
  * Author: khliffz
  * Update URI: https://github.com/jkhliffz09/flight-schedule-timetable
  * Requires at least: 6.0
@@ -16,7 +16,7 @@ if (!defined('ABSPATH')) {
 require_once __DIR__ . '/includes/class-fst-github-updater.php';
 
 final class FST_Flight_Schedule_Timetable {
-    const VERSION = '1.1.10';
+    const VERSION = '1.1.11';
     const SETTINGS_OPTION = 'fst_settings';
     const STATS_OPTION = 'fst_stats';
     const DB_VERSION_OPTION = 'fst_db_version';
@@ -1089,8 +1089,7 @@ final class FST_Flight_Schedule_Timetable {
         $to_email = sanitize_email((string) ($params['toEmail'] ?? ''));
         $payload = isset($params['payload']) && is_array($params['payload']) ? $params['payload'] : [];
         $summary = isset($payload['summary']) && is_array($payload['summary']) ? $payload['summary'] : [];
-        $results = isset($payload['results']) && is_array($payload['results']) ? array_slice($payload['results'], 0, 200) : [];
-        $page_url = esc_url_raw((string) ($payload['pageUrl'] ?? ''));
+        $results = isset($payload['results']) && is_array($payload['results']) ? array_slice($payload['results'], 0, 10) : [];
 
         if ($to_email === '' || !is_email($to_email)) {
             return new WP_REST_Response(['ok' => false, 'message' => 'A valid email address is required.'], 400);
@@ -1200,10 +1199,6 @@ final class FST_Flight_Schedule_Timetable {
             }
 
             $html .= '</div>';
-        }
-
-        if ($page_url !== '') {
-            $html .= '<p style="margin-top:16px;font-size:12px;color:#4b5563;">Source: <a href="' . esc_url($page_url) . '">' . esc_html($page_url) . '</a></p>';
         }
 
         $html .= '</div>';
