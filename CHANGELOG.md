@@ -2,6 +2,10 @@
 
 All notable changes to this plugin should be appended here.
 
+## [1.1.9] - 2026-03-27
+- Refined the advanced-fields tooltip positioning for mobile and desktop spacing.
+- Deployed the latest widget bundle with the updated hint placement.
+
 ## [1.1.8] - 2026-03-27
 - Added spacing above the form card so the advanced-fields tooltip is not clipped.
 - Moved the advanced-fields tooltip beside the chevron on mobile and increased mobile advanced-panel height so hidden fields stay inside the card.
