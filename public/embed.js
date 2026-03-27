@@ -20,6 +20,7 @@
   const attrs = {
     apiUrl: "data-apiurl",
     proxyUrl: "data-proxyurl",
+    emailUrl: "data-emailurl",
     key: "data-key",
     result: "data-result",
     from: "data-from",

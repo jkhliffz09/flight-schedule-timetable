@@ -1,3 +1,8 @@
+## [1.1.10] - 2026-03-27
+- Removed the duplicate `[n] Flights Found` heading below the result filters.
+- Added print behavior that temporarily expands all filtered results for printing, then collapses them after print.
+- Added an email schedule modal and a new WordPress REST endpoint that sends the current filtered results via `wp_mail` from `feedback@passrider.com`.
+
 # Changelog
 
 All notable changes to this plugin should be appended here.

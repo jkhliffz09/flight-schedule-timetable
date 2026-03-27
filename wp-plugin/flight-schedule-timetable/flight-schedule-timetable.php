@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Flight Schedule Timetable
  * Description: Embed and track the Flight Schedule widget with a custom admin dashboard (KPI, Analytics, Settings, Instructions).
- * Version: 1.1.9
+ * Version: 1.1.10
  * Author: khliffz
  * Update URI: https://github.com/jkhliffz09/flight-schedule-timetable
  * Requires at least: 6.0
@@ -16,7 +16,7 @@ if (!defined('ABSPATH')) {
 require_once __DIR__ . '/includes/class-fst-github-updater.php';
 
 final class FST_Flight_Schedule_Timetable {
-    const VERSION = '1.1.9';
+    const VERSION = '1.1.10';
     const SETTINGS_OPTION = 'fst_settings';
     const STATS_OPTION = 'fst_stats';
     const DB_VERSION_OPTION = 'fst_db_version';
@@ -888,6 +888,7 @@ final class FST_Flight_Schedule_Timetable {
         $embed_js_url = esc_url(add_query_arg('v', self::VERSION, $settings['embed_js_url']));
         $host = $this->derive_host_from_embed_url($settings['embed_js_url']);
         $proxy = ($settings['use_local_proxy'] === '1') ? rest_url('fst/v1/timetable') : '';
+        $email_url = rest_url('fst/v1/email');
 
         if (!empty($atts['proxyurl'])) {
             $proxy = $atts['proxyurl'];
@@ -915,6 +916,7 @@ final class FST_Flight_Schedule_Timetable {
           <?php if (!empty($atts['apiurl'])) : ?>data-apiurl="<?php echo esc_attr($atts['apiurl']); ?>"<?php endif; ?>
           <?php if (!empty($atts['result'])) : ?>data-result="<?php echo esc_attr($atts['result']); ?>"<?php endif; ?>
           <?php if (!empty($proxy)) : ?>data-proxyurl="<?php echo esc_attr($proxy); ?>"<?php endif; ?>
+          data-emailurl="<?php echo esc_attr($email_url); ?>"
         ></script>
         <script>
         (function () {
@@ -967,6 +969,12 @@ final class FST_Flight_Schedule_Timetable {
             'methods' => ['GET', 'OPTIONS'],
             'permission_callback' => '__return_true',
             'callback' => [$this, 'rest_timetable_proxy'],
+        ]);
+
+        register_rest_route('fst/v1', '/email', [
+            'methods' => ['POST', 'OPTIONS'],
+            'permission_callback' => '__return_true',
+            'callback' => [$this, 'rest_email_schedule'],
         ]);
     }
 
@@ -1066,6 +1074,163 @@ final class FST_Flight_Schedule_Timetable {
         $body = $this->normalize_xml_payload($body);
 
         return new WP_REST_Response($body, $code, ['Content-Type' => 'application/xml; charset=utf-8']);
+    }
+
+    public function rest_email_schedule(WP_REST_Request $request) {
+        if ($request->get_method() === 'OPTIONS') {
+            return new WP_REST_Response('', 200);
+        }
+
+        $params = $request->get_json_params();
+        if (!is_array($params)) {
+            $params = [];
+        }
+
+        $to_email = sanitize_email((string) ($params['toEmail'] ?? ''));
+        $payload = isset($params['payload']) && is_array($params['payload']) ? $params['payload'] : [];
+        $summary = isset($payload['summary']) && is_array($payload['summary']) ? $payload['summary'] : [];
+        $results = isset($payload['results']) && is_array($payload['results']) ? array_slice($payload['results'], 0, 200) : [];
+        $page_url = esc_url_raw((string) ($payload['pageUrl'] ?? ''));
+
+        if ($to_email === '' || !is_email($to_email)) {
+            return new WP_REST_Response(['ok' => false, 'message' => 'A valid email address is required.'], 400);
+        }
+
+        if (empty($summary) || empty($results)) {
+            return new WP_REST_Response(['ok' => false, 'message' => 'There are no results to email.'], 400);
+        }
+
+        $origin_name = sanitize_text_field((string) ($summary['originName'] ?? ''));
+        $origin_code = strtoupper(sanitize_text_field((string) ($summary['originCode'] ?? '')));
+        $destination_name = sanitize_text_field((string) ($summary['destinationName'] ?? ''));
+        $destination_code = strtoupper(sanitize_text_field((string) ($summary['destinationCode'] ?? '')));
+        $date_label = sanitize_text_field((string) ($summary['dateLabel'] ?? ''));
+        $total_results = (int) ($summary['totalResults'] ?? 0);
+
+        $subject_route = trim($origin_code . ' to ' . $destination_code);
+        $subject = $subject_route !== '' ? 'Flight Schedule: ' . $subject_route : 'Flight Schedule';
+
+        $html = '<div style="font-family:Arial,sans-serif;color:#111111;line-height:1.5;">';
+        $html .= '<h2 style="margin:0 0 16px;">Flight Schedule</h2>';
+        $html .= '<p style="margin:0 0 4px;"><strong>Date of Flight:</strong> ' . esc_html($date_label) . '</p>';
+        $html .= '<p style="margin:0 0 4px;"><strong>From:</strong> ' . esc_html(trim($origin_name . ' (' . $origin_code . ')')) . '</p>';
+        $html .= '<p style="margin:0 0 4px;"><strong>To:</strong> ' . esc_html(trim($destination_name . ' (' . $destination_code . ')')) . '</p>';
+        $html .= '<p style="margin:0 0 16px;"><strong>Total Results:</strong> ' . esc_html((string) $total_results) . '</p>';
+
+        foreach ($results as $index => $result) {
+            if (!is_array($result)) {
+                continue;
+            }
+
+            $dep_time = sanitize_text_field((string) ($result['depTime'] ?? ''));
+            $dep_indicator = sanitize_text_field((string) ($result['depDayIndicator'] ?? ''));
+            $dep_code = strtoupper(sanitize_text_field((string) ($result['depCode'] ?? '')));
+            $dep_date = sanitize_text_field((string) ($result['depDate'] ?? ''));
+            $arr_time = sanitize_text_field((string) ($result['arrTime'] ?? ''));
+            $arr_indicator = sanitize_text_field((string) ($result['arrDayIndicator'] ?? ''));
+            $arr_code = strtoupper(sanitize_text_field((string) ($result['arrCode'] ?? '')));
+            $arr_date = sanitize_text_field((string) ($result['arrDate'] ?? ''));
+            $duration = sanitize_text_field((string) ($result['duration'] ?? ''));
+            $stops = sanitize_text_field((string) ($result['stops'] ?? ''));
+            $airline = sanitize_text_field((string) ($result['airline'] ?? ''));
+            $segments = isset($result['segments']) && is_array($result['segments']) ? array_slice($result['segments'], 0, 10) : [];
+
+            $html .= '<div style="border:1px solid #d1d5db;border-radius:16px;padding:16px;margin:0 0 16px;">';
+            $html .= '<p style="margin:0 0 8px;"><strong>Result ' . esc_html((string) ($index + 1)) . ':</strong> ' . esc_html($airline) . '</p>';
+            $html .= '<p style="margin:0 0 4px;"><strong>Departure:</strong> ' . esc_html(trim($dep_time . ' ' . $dep_indicator)) . ' • ' . esc_html($dep_code) . ' • ' . esc_html($dep_date) . '</p>';
+            $html .= '<p style="margin:0 0 4px;"><strong>Arrival:</strong> ' . esc_html(trim($arr_time . ' ' . $arr_indicator)) . ' • ' . esc_html($arr_code) . ' • ' . esc_html($arr_date) . '</p>';
+            $html .= '<p style="margin:0 0 12px;"><strong>Duration:</strong> ' . esc_html($duration) . ' | <strong>Stops:</strong> ' . esc_html($stops) . '</p>';
+
+            if (!empty($segments)) {
+                $html .= '<table style="width:100%;border-collapse:collapse;font-size:14px;">';
+                $html .= '<thead><tr>';
+                $html .= '<th style="text-align:left;padding:8px;border-bottom:1px solid #e5e7eb;">Flight</th>';
+                $html .= '<th style="text-align:left;padding:8px;border-bottom:1px solid #e5e7eb;">Route</th>';
+                $html .= '<th style="text-align:left;padding:8px;border-bottom:1px solid #e5e7eb;">Time</th>';
+                $html .= '<th style="text-align:left;padding:8px;border-bottom:1px solid #e5e7eb;">Equipment</th>';
+                $html .= '</tr></thead><tbody>';
+
+                foreach ($segments as $segment) {
+                    if (!is_array($segment)) {
+                        continue;
+                    }
+
+                    $segment_airline_name = sanitize_text_field((string) ($segment['airlineName'] ?? ''));
+                    $segment_airline_code = strtoupper(sanitize_text_field((string) ($segment['airlineCode'] ?? '')));
+                    $segment_flight_number = sanitize_text_field((string) ($segment['flightNumber'] ?? ''));
+                    $segment_aircraft = sanitize_text_field((string) ($segment['airEquipType'] ?? ''));
+                    $segment_from = sanitize_text_field((string) ($segment['fromLabel'] ?? ''));
+                    $segment_to = sanitize_text_field((string) ($segment['toLabel'] ?? ''));
+                    $segment_dep_time = sanitize_text_field((string) ($segment['depTime'] ?? ''));
+                    $segment_dep_indicator = sanitize_text_field((string) ($segment['depDayIndicator'] ?? ''));
+                    $segment_arr_time = sanitize_text_field((string) ($segment['arrTime'] ?? ''));
+                    $segment_arr_indicator = sanitize_text_field((string) ($segment['arrDayIndicator'] ?? ''));
+                    $segment_dep_terminal = sanitize_text_field((string) ($segment['depTerminal'] ?? ''));
+                    $segment_arr_terminal = sanitize_text_field((string) ($segment['arrTerminal'] ?? ''));
+                    $segment_operated_by = sanitize_text_field((string) ($segment['operatedBy'] ?? ''));
+                    $segment_duration = sanitize_text_field((string) ($segment['duration'] ?? ''));
+
+                    $flight_label = trim($segment_airline_name . ' ' . trim($segment_airline_code . $segment_flight_number));
+                    if ($segment_operated_by !== '') {
+                        $flight_label .= '<br><span style="color:#1d4ed8;font-size:12px;">' . esc_html($segment_operated_by) . '</span>';
+                    }
+
+                    $route_label = esc_html($segment_from);
+                    if ($segment_dep_terminal !== '') {
+                        $route_label .= '<br><span style="font-size:12px;color:#4b5563;">' . esc_html($segment_dep_terminal) . '</span>';
+                    }
+                    $route_label .= '<br>&rarr;<br>' . esc_html($segment_to);
+                    if ($segment_arr_terminal !== '') {
+                        $route_label .= '<br><span style="font-size:12px;color:#4b5563;">' . esc_html($segment_arr_terminal) . '</span>';
+                    }
+
+                    $time_label = esc_html(trim($segment_dep_time . ' ' . $segment_dep_indicator));
+                    $time_label .= '<br><span style="font-size:12px;color:#4b5563;">' . esc_html($segment_duration) . '</span>';
+                    $time_label .= '<br>' . esc_html(trim($segment_arr_time . ' ' . $segment_arr_indicator));
+
+                    $html .= '<tr>';
+                    $html .= '<td style="padding:8px;border-bottom:1px solid #f3f4f6;">' . $flight_label . '</td>';
+                    $html .= '<td style="padding:8px;border-bottom:1px solid #f3f4f6;">' . $route_label . '</td>';
+                    $html .= '<td style="padding:8px;border-bottom:1px solid #f3f4f6;">' . $time_label . '</td>';
+                    $html .= '<td style="padding:8px;border-bottom:1px solid #f3f4f6;">' . esc_html($segment_aircraft) . '</td>';
+                    $html .= '</tr>';
+                }
+
+                $html .= '</tbody></table>';
+            }
+
+            $html .= '</div>';
+        }
+
+        if ($page_url !== '') {
+            $html .= '<p style="margin-top:16px;font-size:12px;color:#4b5563;">Source: <a href="' . esc_url($page_url) . '">' . esc_html($page_url) . '</a></p>';
+        }
+
+        $html .= '</div>';
+
+        $from_filter = function () {
+            return 'feedback@passrider.com';
+        };
+        $from_name_filter = function () {
+            return 'Passrider Flight Schedule';
+        };
+        $content_type_filter = function () {
+            return 'text/html';
+        };
+
+        add_filter('wp_mail_from', $from_filter);
+        add_filter('wp_mail_from_name', $from_name_filter);
+        add_filter('wp_mail_content_type', $content_type_filter);
+        $sent = wp_mail($to_email, $subject, $html);
+        remove_filter('wp_mail_from', $from_filter);
+        remove_filter('wp_mail_from_name', $from_name_filter);
+        remove_filter('wp_mail_content_type', $content_type_filter);
+
+        if (!$sent) {
+            return new WP_REST_Response(['ok' => false, 'message' => 'Unable to send email.'], 500);
+        }
+
+        return new WP_REST_Response(['ok' => true], 200);
     }
 
     public function serve_raw_xml_response($served, $result, $request, $server) {

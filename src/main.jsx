@@ -23,6 +23,11 @@ import {
   faBanSmoking,
   faWifi,
   faChair,
+  faPrint,
+  faEnvelope,
+  faBed,
+  faChevronRight,
+  faChevronLeft,
   faCirclePlus,
   faCircleExclamation,
   faCircleQuestion,
@@ -38,6 +43,7 @@ function getLocalISODate() {
 const defaults = {
   apiUrl: "https://services.flightlookup.com/v1/xml/TimeTable/",
   proxyUrl: "",
+  emailUrl: "",
   subscriptionKey: "",
   result: "100",
   from: "",
@@ -139,6 +145,7 @@ const bootConfig = {
   ...defaults,
   apiUrl: params.get("apiUrl") || defaults.apiUrl,
   proxyUrl: params.get("proxyUrl") || defaults.proxyUrl,
+  emailUrl: params.get("emailUrl") || defaults.emailUrl,
   subscriptionKey: params.get("key") || defaults.subscriptionKey,
   result: params.get("result") || defaults.result,
   airline: params.get("airline") || defaults.airline,
@@ -280,6 +287,11 @@ function Icon({ name, className = "", size = 20 }) {
     NoSmoking: faBanSmoking,
     Wifi: faWifi,
     Seat: faChair,
+    Print: faPrint,
+    Email: faEnvelope,
+    Hotel: faBed,
+    ChevronRight: faChevronRight,
+    ChevronLeft: faChevronLeft,
     PlusCircle: faCirclePlus,
     ExclamationCircle: faCircleExclamation,
     QuestionCircle: faCircleQuestion
@@ -325,6 +337,15 @@ function toYmd(value) {
   const m = String(dt.getUTCMonth() + 1).padStart(2, "0");
   const d = String(dt.getUTCDate()).padStart(2, "0");
   return `${y}${m}${d}`;
+}
+
+function shiftDate(value, days) {
+  const raw = String(value || "").replace(/\//g, "-");
+  const dt = new Date(`${raw}T00:00:00`);
+  if (Number.isNaN(dt.getTime())) return value;
+  dt.setDate(dt.getDate() + days);
+  const local = new Date(dt.getTime() - dt.getTimezoneOffset() * 60000);
+  return local.toISOString().slice(0, 10);
 }
 
 function durationToLabel(iso) {
@@ -648,8 +669,16 @@ async function fetchFlights(config) {
   const text = await res.text();
   const doc = new DOMParser().parseFromString(text, "application/xml");
   const details = [...doc.getElementsByTagNameNS("*", "FlightDetails")];
+  const responseFields = doc.getElementsByTagNameNS("*", "FLSResponseFields")[0];
+  const meta = {
+    originName: responseFields?.getAttribute("FLSOriginName") || extractIata(config.from) || "",
+    originCode: responseFields?.getAttribute("FLSOriginCode") || extractIata(config.from) || "",
+    destinationName: responseFields?.getAttribute("FLSDestinationName") || extractIata(config.to) || "",
+    destinationCode: responseFields?.getAttribute("FLSDestinationCode") || extractIata(config.to) || "",
+    totalResults: Number(responseFields?.getAttribute("FLSResultCount") || details.length || 0)
+  };
 
-  return details.map((node, idx) => {
+  const flights = details.map((node, idx) => {
     const depIso = node.getAttribute("FLSDepartureDateTime") || "";
     const arrIso = node.getAttribute("FLSArrivalDateTime") || "";
     const flightType = (node.getAttribute("FLSFlightType") || "").toLowerCase();
@@ -743,6 +772,8 @@ async function fetchFlights(config) {
       segments
     };
   });
+
+  return { flights, meta };
 }
 
 function App() {
@@ -750,17 +781,26 @@ function App() {
   const [phase, setPhase] = useState("idle");
   const [error, setError] = useState("");
   const [flights, setFlights] = useState([]);
+  const [summaryMeta, setSummaryMeta] = useState(null);
   const [expanded, setExpanded] = useState(null);
   const [openAmenity, setOpenAmenity] = useState(null);
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [activeAutocomplete, setActiveAutocomplete] = useState(null);
   const [sortField, setSortField] = useState("departure_time");
   const [sortOrder, setSortOrder] = useState("asc");
+  const [filterAircraft, setFilterAircraft] = useState("ALL");
+  const [filterDeparture, setFilterDeparture] = useState("ALL");
+  const [filterArrival, setFilterArrival] = useState("ALL");
   const [page, setPage] = useState(1);
   const [selectedDayByFlight, setSelectedDayByFlight] = useState({});
   const [viaInput, setViaInput] = useState("");
   const [selectedViaCodes, setSelectedViaCodes] = useState(extractIataList(bootConfig.via));
   const [appliedViaCodes, setAppliedViaCodes] = useState(extractIataList(bootConfig.via));
+  const [showEmailModal, setShowEmailModal] = useState(false);
+  const [emailRecipient, setEmailRecipient] = useState("");
+  const [emailSending, setEmailSending] = useState(false);
+  const [emailFeedback, setEmailFeedback] = useState("");
+  const [printExpandedAll, setPrintExpandedAll] = useState(false);
   const expandTimerRef = useRef(null);
   const [lookupData, setLookupData] = useState({
     airportCountryByIata: new Map(),
@@ -781,6 +821,7 @@ function App() {
     setPhase("idle");
     setError("");
     setFlights([]);
+    setSummaryMeta(null);
     setExpanded(null);
     setOpenAmenity(null);
     setSelectedDayByFlight({});
@@ -900,6 +941,19 @@ function App() {
     };
   }, []);
 
+  useEffect(() => {
+    const handleAfterPrint = () => {
+      setPrintExpandedAll(false);
+      setExpanded(null);
+      setOpenAmenity(null);
+    };
+
+    window.addEventListener("afterprint", handleAfterPrint);
+    return () => {
+      window.removeEventListener("afterprint", handleAfterPrint);
+    };
+  }, []);
+
   const reopenExpandedFlight = (flightId) => {
     if (expandTimerRef.current) clearTimeout(expandTimerRef.current);
     setExpanded(null);
@@ -917,11 +971,15 @@ function App() {
     setOpenAmenity(null);
     setPage(1);
     setSelectedDayByFlight({});
+    setFilterAircraft("ALL");
+    setFilterDeparture("ALL");
+    setFilterArrival("ALL");
     const loaderDelay = new Promise((resolve) => setTimeout(resolve, LOADER_DURATION_MS));
 
     try {
-      const [result] = await Promise.all([fetchFlights(searchForm), loaderDelay]);
+      const [{ flights: result, meta }] = await Promise.all([fetchFlights(searchForm), loaderDelay]);
       setFlights(result);
+      setSummaryMeta(meta);
       setAppliedViaCodes(extractIataList(searchForm.via || ""));
       setSelectedDayByFlight(getInitialWeekdaySelection(result, searchForm.date));
       setPhase("done");
@@ -929,6 +987,7 @@ function App() {
     } catch (err) {
       await loaderDelay;
       setFlights([]);
+      setSummaryMeta(null);
       setAppliedViaCodes(extractIataList(searchForm.via || ""));
       setSelectedDayByFlight({});
       setPhase("done");
@@ -980,8 +1039,17 @@ function App() {
     })
     : flights;
   const viaNoRoutingMatch = appliedViaCodes.length > 0 && flights.length > 0 && flightsByVia.length === 0;
+  const aircraftOptions = [...new Set(flights.flatMap((flight) => flight.segments.map((segment) => segment.airEquipType)).filter(Boolean))];
+  const departureOptions = [...new Set(flights.flatMap((flight) => flight.segments.map((segment) => extractIata(segment.fromLabel))).filter(Boolean))].sort(compareText);
+  const arrivalOptions = [...new Set(flights.flatMap((flight) => flight.segments.map((segment) => extractIata(segment.toLabel))).filter(Boolean))].sort(compareText);
+  const flightsByFilters = flightsByVia.filter((flight) => {
+    const matchAircraft = filterAircraft === "ALL" || flight.segments.some((segment) => segment.airEquipType === filterAircraft);
+    const matchDeparture = filterDeparture === "ALL" || flight.segments.some((segment) => extractIata(segment.fromLabel) === filterDeparture);
+    const matchArrival = filterArrival === "ALL" || flight.segments.some((segment) => extractIata(segment.toLabel) === filterArrival);
+    return matchAircraft && matchDeparture && matchArrival;
+  });
 
-  const sortedFlights = [...flightsByVia].sort((a, b) => {
+  const sortedFlights = [...flightsByFilters].sort((a, b) => {
     const base = compareTuple(a, b, sortFieldsByType[sortField] || sortFieldsByType.departure_time);
     return sortOrder === "desc" ? -base : base;
   });
@@ -990,6 +1058,122 @@ function App() {
   const totalPages = Math.max(1, Math.ceil(sortedFlights.length / PAGE_SIZE));
   const pageSafe = Math.min(page, totalPages);
   const pagedFlights = sortedFlights.slice((pageSafe - 1) * PAGE_SIZE, pageSafe * PAGE_SIZE);
+  const renderedFlights = printExpandedAll ? sortedFlights : pagedFlights;
+  const summaryDateLabel = new Date(`${form.date}T00:00:00`).toLocaleDateString(undefined, {
+    weekday: "long",
+    month: "long",
+    day: "numeric",
+    year: "numeric"
+  });
+  const hotelLink = summaryMeta
+    ? `https://www.stay22.com/allez/booking?aid=cruisinaltitude&campaign=departure_board&address=${encodeURIComponent(summaryMeta.destinationName)}&checkin=${form.date}&checkout=${shiftDate(form.date, 1)}`
+    : "";
+  const emailPayload = summaryMeta
+    ? {
+        summary: {
+          dateLabel: summaryDateLabel,
+          originName: summaryMeta.originName,
+          originCode: summaryMeta.originCode,
+          destinationName: summaryMeta.destinationName,
+          destinationCode: summaryMeta.destinationCode,
+          totalResults: sortedFlights.length
+        },
+        results: sortedFlights.map((flight) => ({
+          depTime: flight.depTime,
+          depDayIndicator: flight.depDayIndicator,
+          depCode: flight.depCode,
+          depDate: flight.depDate,
+          arrTime: flight.arrTime,
+          arrDayIndicator: flight.arrDayIndicator,
+          arrCode: flight.arrCode,
+          arrDate: flight.arrDate,
+          duration: flight.duration,
+          stops: flight.stops,
+          airline: flight.airline,
+          segments: flight.segments.map((segment) => ({
+            airlineName: segment.airlineName,
+            airlineCode: segment.airlineCode,
+            flightNumber: segment.flightNumber,
+            airEquipType: resolveEquipmentName(segment.airEquipType, lookupData.equipmentNameByCode),
+            operatedBy: segment.operatedBy,
+            fromLabel: segment.fromLabel,
+            toLabel: segment.toLabel,
+            depTime: segment.depTime,
+            depDayIndicator: segment.depDayIndicator,
+            arrTime: segment.arrTime,
+            arrDayIndicator: segment.arrDayIndicator,
+            depTerminal: segment.depTerminal,
+            arrTerminal: segment.arrTerminal,
+            duration: segment.duration
+          }))
+        })),
+        pageUrl: window.location.href
+      }
+    : null;
+
+  async function runRelativeDaySearch(offset) {
+    const nextDate = shiftDate(form.date, offset);
+    const nextForm = { ...form, date: nextDate };
+    setForm(nextForm);
+    await runSearch(nextForm);
+  }
+
+  function handlePrintSchedule() {
+    setPrintExpandedAll(true);
+    setExpanded(null);
+    setOpenAmenity(null);
+    window.requestAnimationFrame(() => {
+      window.setTimeout(() => {
+        window.print();
+      }, 120);
+    });
+  }
+
+  async function handleSendEmail() {
+    if (!bootConfig.emailUrl) {
+      setEmailFeedback("Email endpoint is not configured.");
+      return;
+    }
+
+    const trimmed = emailRecipient.trim();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed)) {
+      setEmailFeedback("Enter a valid email address.");
+      return;
+    }
+
+    if (!emailPayload) {
+      setEmailFeedback("There are no results to email.");
+      return;
+    }
+
+    setEmailSending(true);
+    setEmailFeedback("");
+
+    try {
+      const response = await fetch(bootConfig.emailUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          toEmail: trimmed,
+          payload: emailPayload
+        })
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || !data.ok) {
+        throw new Error(data.message || "Unable to send email.");
+      }
+      setEmailFeedback(`Schedule sent to ${trimmed}.`);
+      setEmailSending(false);
+      window.setTimeout(() => {
+        setShowEmailModal(false);
+        setEmailRecipient("");
+        setEmailFeedback("");
+      }, 900);
+    } catch (err) {
+      setEmailSending(false);
+      setEmailFeedback(err.message || "Unable to send email.");
+    }
+  }
 
   return (
     <main className="fst-bg min-h-screen text-black">
@@ -1272,36 +1456,99 @@ function App() {
 
         {phase === "done" && (
           <section className="fst-glass mt-6 p-4 md:p-6">
-            <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
-              <h2 className="text-xl font-bold">{flightsByVia.length} Flights Found</h2>
-              <div className="flex flex-wrap items-center gap-2">
-                <select
-                  className="rounded-lg border border-black bg-white px-3 py-2 text-sm"
-                  value={sortField}
-                  onChange={(e) => {
-                    setSortField(e.target.value);
-                    setPage(1);
-                  }}
-                >
-                  <option value="departure_time">Departure Time</option>
-                  <option value="airport">Airport</option>
-                  <option value="airline">Airline</option>
-                  <option value="arrival_time">Arrival Time</option>
-                  <option value="duration">Duration</option>
-                </select>
-                <select
-                  className="rounded-lg border border-black bg-white px-3 py-2 text-sm"
-                  value={sortOrder}
-                  onChange={(e) => {
-                    setSortOrder(e.target.value);
-                    setPage(1);
-                  }}
-                >
-                  <option value="asc">Ascending</option>
-                  <option value="desc">Descending</option>
-                </select>
+            {summaryMeta && (
+              <div className="mb-5 space-y-4">
+                <div className="grid gap-4 rounded-[28px] bg-[#dfe1ff] p-5 shadow-[0_8px_24px_rgba(13,18,30,0.12)] md:grid-cols-[1.3fr_1fr_auto] md:items-center">
+                  <div>
+                    <h2 className="text-2xl font-bold text-black">{summaryDateLabel}</h2>
+                    <p className="text-sm text-black">From: {summaryMeta.originName} ({summaryMeta.originCode})</p>
+                    <p className="text-sm text-black">To: {summaryMeta.destinationName} ({summaryMeta.destinationCode})</p>
+                    <p className="text-sm text-black">Total Results: {sortedFlights.length}</p>
+                  </div>
+
+                  <div className="grid gap-3 md:grid-cols-2">
+                    <button type="button" className="inline-flex items-center gap-2 rounded-2xl bg-white px-4 py-3 text-sm font-semibold text-blue-700 shadow-sm" onClick={handlePrintSchedule}>
+                      <Icon name="Print" size={14} />
+                      <span>Print Schedule</span>
+                    </button>
+                    <button type="button" className="inline-flex items-center gap-2 rounded-2xl bg-white px-4 py-3 text-sm font-semibold text-blue-700 shadow-sm" onClick={() => { setShowEmailModal(true); setEmailFeedback(""); }}>
+                      <Icon name="Email" size={14} />
+                      <span>Email Schedule</span>
+                    </button>
+                    <a className="inline-flex items-center gap-2 rounded-2xl bg-white px-4 py-3 text-sm font-semibold text-black shadow-sm md:col-span-2" href={hotelLink} target="_blank" rel="noreferrer">
+                      <Icon name="Hotel" size={14} />
+                      <span>Book Hotel in {summaryMeta.destinationName}</span>
+                    </a>
+                  </div>
+
+                  <div className="grid gap-2">
+                    <button type="button" className="inline-flex items-center justify-center gap-2 rounded-xl bg-blue-500 px-4 py-3 text-sm font-semibold text-white shadow-sm" onClick={() => runRelativeDaySearch(1)}>
+                      <span>Next Day</span>
+                      <Icon name="ChevronRight" size={12} />
+                      <Icon name="ChevronRight" size={12} />
+                    </button>
+                    <button type="button" className="inline-flex items-center justify-center gap-2 rounded-xl bg-blue-500 px-4 py-3 text-sm font-semibold text-white shadow-sm" onClick={() => runRelativeDaySearch(-1)}>
+                      <Icon name="ChevronLeft" size={12} />
+                      <Icon name="ChevronLeft" size={12} />
+                      <span>Prev Day</span>
+                    </button>
+                  </div>
+                </div>
+
+                <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+                  <div className="flex flex-col gap-3 md:flex-row md:items-center">
+                    <span className="text-sm font-medium text-black">Filter By:</span>
+                    <select className="rounded-lg border border-black bg-white px-3 py-2 text-sm" value={filterAircraft} onChange={(e) => { setFilterAircraft(e.target.value); setPage(1); }}>
+                      <option value="ALL">Aircraft</option>
+                      {aircraftOptions.map((code) => (
+                        <option key={code} value={code}>{resolveEquipmentName(code, lookupData.equipmentNameByCode)}</option>
+                      ))}
+                    </select>
+                    <select className="rounded-lg border border-black bg-white px-3 py-2 text-sm" value={filterDeparture} onChange={(e) => { setFilterDeparture(e.target.value); setPage(1); }}>
+                      <option value="ALL">Departure</option>
+                      {departureOptions.map((code) => (
+                        <option key={code} value={code}>{code}</option>
+                      ))}
+                    </select>
+                    <select className="rounded-lg border border-black bg-white px-3 py-2 text-sm" value={filterArrival} onChange={(e) => { setFilterArrival(e.target.value); setPage(1); }}>
+                      <option value="ALL">Arrival</option>
+                      {arrivalOptions.map((code) => (
+                        <option key={code} value={code}>{code}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-sm font-medium text-black">Sort By:</span>
+                    <select
+                      className="rounded-lg border border-black bg-white px-3 py-2 text-sm"
+                      value={sortField}
+                      onChange={(e) => {
+                        setSortField(e.target.value);
+                        setPage(1);
+                      }}
+                    >
+                      <option value="departure_time">Departure Time</option>
+                      <option value="airport">Airport</option>
+                      <option value="airline">Airline</option>
+                      <option value="arrival_time">Arrival Time</option>
+                      <option value="duration">Duration</option>
+                    </select>
+                    <select
+                      className="rounded-lg border border-black bg-white px-3 py-2 text-sm"
+                      value={sortOrder}
+                      onChange={(e) => {
+                        setSortOrder(e.target.value);
+                        setPage(1);
+                      }}
+                    >
+                      <option value="asc">Ascending</option>
+                      <option value="desc">Descending</option>
+                    </select>
+                  </div>
+                </div>
               </div>
-            </div>
+            )}
             {error && (
               <div className="mb-4 rounded-xl border border-red-600 bg-red-50 px-4 py-3 text-base font-semibold text-red-700">
                 {error}
@@ -1314,7 +1561,7 @@ function App() {
             )}
 
             <div className="space-y-5">
-              {pagedFlights.map((f) => {
+              {renderedFlights.map((f) => {
                 const availableWeekdays = isSevenDayMode ? mapFlightDaysToWeek(f.flightDays) : [];
                 const defaultIndex = availableWeekdays.findIndex(Boolean);
                 const selectedWeekdayIndex = isSevenDayMode
@@ -1322,6 +1569,7 @@ function App() {
                   : -1;
                 const selectedWeekdayColumn = isSevenDayMode ? weekColumns[selectedWeekdayIndex] : null;
                 const displayDate = isSevenDayMode ? formatWeekdayLabel(selectedWeekdayColumn) : f.depDate;
+                const isOpen = printExpandedAll || expanded === f.id;
 
                 return (
                 <article key={f.id} className="rounded-2xl bg-white shadow-[0_2px_10px_rgba(13,18,30,0.18)]">
@@ -1410,11 +1658,11 @@ function App() {
                     </div>
 
                     <div className="flex items-center gap-3">
-                      <Icon name="ChevronDown" className={`transition ${expanded === f.id ? "rotate-180" : ""}`} />
+                      <Icon name="ChevronDown" className={`transition ${isOpen ? "rotate-180" : ""}`} />
                     </div>
                   </button>
 
-                  <div className={`fst-drawer ${expanded === f.id ? "is-open" : "is-closed"}`}>
+                  <div className={`fst-drawer ${isOpen ? "is-open" : "is-closed"}`}>
                     <div className="fst-drawer-inner border-t border-gray-300 bg-white px-6 pb-6 pt-5 text-sm text-black">
                       <div className="rounded-2xl border border-gray-300 bg-white">
                         <div className="flex items-center justify-between border-b border-gray-300 px-5 py-4">
@@ -1523,7 +1771,7 @@ function App() {
               })}
             </div>
 
-            {flightsByVia.length > PAGE_SIZE && (
+            {!printExpandedAll && sortedFlights.length > PAGE_SIZE && (
               <div className="mt-4 flex items-center justify-between gap-3">
                 <button
                   type="button"
@@ -1547,6 +1795,71 @@ function App() {
               </div>
             )}
           </section>
+        )}
+
+        {showEmailModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/35 px-4">
+            <div className="w-full max-w-md rounded-2xl bg-white p-5 shadow-[0_16px_48px_rgba(13,18,30,0.24)]">
+              <div className="mb-4 flex items-start justify-between gap-4">
+                <div>
+                  <h3 className="text-lg font-bold text-black">Email Schedule</h3>
+                  <p className="mt-1 text-sm text-black/70">Send the current filtered results using `feedback@passrider.com`.</p>
+                </div>
+                <button
+                  type="button"
+                  className="rounded-full border border-black px-3 py-1 text-sm font-semibold text-black"
+                  onClick={() => {
+                    if (emailSending) return;
+                    setShowEmailModal(false);
+                    setEmailFeedback("");
+                  }}
+                >
+                  Close
+                </button>
+              </div>
+
+              <label className="block">
+                <span className="mb-1 block text-xs uppercase tracking-wider text-black">Recipient Email</span>
+                <input
+                  type="email"
+                  className="w-full rounded-xl border border-black bg-white px-3 py-3 text-sm outline-none transition focus:outline-none"
+                  placeholder="name@example.com"
+                  value={emailRecipient}
+                  onChange={(e) => setEmailRecipient(e.target.value)}
+                  disabled={emailSending}
+                />
+              </label>
+
+              {emailFeedback && (
+                <div className={`mt-3 rounded-xl px-4 py-3 text-sm font-semibold ${emailFeedback.startsWith("Schedule sent") ? "border border-green-600 bg-green-50 text-green-700" : "border border-red-600 bg-red-50 text-red-700"}`}>
+                  {emailFeedback}
+                </div>
+              )}
+
+              <div className="mt-4 flex justify-end gap-3">
+                <button
+                  type="button"
+                  className="rounded-xl border border-black px-4 py-2 text-sm font-semibold text-black"
+                  onClick={() => {
+                    if (emailSending) return;
+                    setShowEmailModal(false);
+                    setEmailFeedback("");
+                  }}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
+                  onClick={handleSendEmail}
+                  disabled={emailSending}
+                >
+                  <Icon name="Email" size={14} />
+                  <span>{emailSending ? "Sending..." : "Send"}</span>
+                </button>
+              </div>
+            </div>
+          </div>
         )}
       </div>
     </main>
