@@ -527,16 +527,6 @@ function joinMetaParts(parts) {
   return parts.filter(Boolean).join(" \u2022 ");
 }
 
-function layoverLabel(prevArrIso, nextDepIso) {
-  const prev = new Date(prevArrIso);
-  const next = new Date(nextDepIso);
-  if (Number.isNaN(prev.getTime()) || Number.isNaN(next.getTime())) return "";
-  const mins = Math.max(0, Math.round((next.getTime() - prev.getTime()) / 60000));
-  const h = Math.floor(mins / 60);
-  const m = mins % 60;
-  return `${h}h ${String(m).padStart(2, "0")}m`;
-}
-
 function parseMealCodes(raw) {
   return [...new Set(String(raw || "").toUpperCase().replace(/[^A-Z]/g, "").split("").filter(Boolean))];
 }
@@ -1506,15 +1496,6 @@ function App() {
                                 </div>
                               </div>
 
-                              {idx < (f.segments?.length || 0) - 1 && (
-                                <div className="mx-2 border-y border-gray-300 px-3 py-3 text-lg text-black">
-                                  {layoverLabel(seg.arrIso, f.segments[idx + 1].depIso)} • Change planes in {(() => {
-                                    const nextFrom = f.segments[idx + 1].fromLabel;
-                                    const m = String(nextFrom).match(/\(([A-Z]{3})\)/);
-                                    return m ? m[1] : nextFrom;
-                                  })()}
-                                </div>
-                              )}
                             </React.Fragment>
                           ))}
                         </div>
