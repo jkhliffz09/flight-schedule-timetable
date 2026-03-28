@@ -987,6 +987,34 @@ function App() {
     url.searchParams.set("fromCode", summaryMeta.originCode || "");
     url.searchParams.set("toName", summaryMeta.destinationName || "");
     url.searchParams.set("toCode", summaryMeta.destinationCode || "");
+    url.searchParams.set("airports", [...new Set(
+      flights.flatMap((flight) => [
+        flight.depCode,
+        flight.arrCode,
+        ...String(flight.via || "").split(",").map((code) => code.trim()).filter(Boolean),
+        ...flight.segments.flatMap((segment) => [
+          extractIata(segment.fromLabel),
+          extractIata(segment.toLabel)
+        ])
+      ]).filter(Boolean)
+    )].join("||"));
+    url.searchParams.set("airlines", [...new Set(
+      flights.flatMap((flight) => [
+        flight.airline,
+        flight.airlineCode,
+        ...flight.segments.flatMap((segment) => [segment.airlineName, segment.airlineCode])
+      ]).filter(Boolean)
+    )].join("||"));
+    url.searchParams.set("aircraft", [...new Set(
+      flights.flatMap((flight) => [
+        resolveEquipmentName(flight.airEquipType, lookupData.equipmentNameByCode),
+        flight.airEquipType,
+        ...flight.segments.flatMap((segment) => [
+          resolveEquipmentName(segment.airEquipType, lookupData.equipmentNameByCode),
+          segment.airEquipType
+        ])
+      ]).filter(Boolean)
+    )].join("||"));
 
     fetch(url.toString(), { headers: { Accept: "application/json" } })
       .then((response) => response.json())
@@ -1002,7 +1030,7 @@ function App() {
     return () => {
       cancelled = true;
     };
-  }, [phase, flights.length, summaryMeta]);
+  }, [phase, flights, summaryMeta, lookupData.equipmentNameByCode]);
 
   const reopenExpandedFlight = (flightId) => {
     if (expandTimerRef.current) clearTimeout(expandTimerRef.current);

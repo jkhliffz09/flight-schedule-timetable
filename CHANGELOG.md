@@ -1,3 +1,7 @@
+## [1.1.13] - 2026-03-28
+- Expanded related-content matching to include route airports, airlines, and aircraft from the current result set.
+- Improved related-card relevance by sending stop airports and resolved equipment names to the WordPress related-content endpoint.
+
 ## [1.1.12] - 2026-03-28
 - Added related published post/page cards to each expanded result via a new WordPress REST endpoint.
 - Added route-based related content matching for origin/destination terms, with up to 3 cards per expanded result.

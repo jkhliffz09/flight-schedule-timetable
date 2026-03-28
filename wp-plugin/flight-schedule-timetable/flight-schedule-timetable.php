@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Flight Schedule Timetable
  * Description: Embed and track the Flight Schedule widget with a custom admin dashboard (KPI, Analytics, Settings, Instructions).
- * Version: 1.1.12
+ * Version: 1.1.13
  * Author: khliffz
  * Update URI: https://github.com/jkhliffz09/flight-schedule-timetable
  * Requires at least: 6.0
@@ -16,7 +16,7 @@ if (!defined('ABSPATH')) {
 require_once __DIR__ . '/includes/class-fst-github-updater.php';
 
 final class FST_Flight_Schedule_Timetable {
-    const VERSION = '1.1.12';
+    const VERSION = '1.1.13';
     const SETTINGS_OPTION = 'fst_settings';
     const STATS_OPTION = 'fst_stats';
     const DB_VERSION_OPTION = 'fst_db_version';
@@ -1264,6 +1264,17 @@ final class FST_Flight_Schedule_Timetable {
         return array_values(array_unique(array_filter($terms)));
     }
 
+    private function fst_related_terms_from_list($raw) {
+        $parts = preg_split('/\|\|+/', (string) $raw, -1, PREG_SPLIT_NO_EMPTY);
+        $terms = [];
+
+        foreach ($parts as $part) {
+            $terms = array_merge($terms, $this->fst_related_terms($part));
+        }
+
+        return array_values(array_unique(array_filter($terms)));
+    }
+
     private function fst_related_content_score($post, $terms) {
         $haystack = strtolower(
             wp_strip_all_tags(
@@ -1298,10 +1309,16 @@ final class FST_Flight_Schedule_Timetable {
         $from_code = strtoupper(sanitize_text_field((string) $request->get_param('fromCode')));
         $to_name = sanitize_text_field((string) $request->get_param('toName'));
         $to_code = strtoupper(sanitize_text_field((string) $request->get_param('toCode')));
+        $airport_terms = $this->fst_related_terms_from_list((string) $request->get_param('airports'));
+        $airline_terms = $this->fst_related_terms_from_list((string) $request->get_param('airlines'));
+        $aircraft_terms = $this->fst_related_terms_from_list((string) $request->get_param('aircraft'));
 
         $terms = array_values(array_unique(array_merge(
             $this->fst_related_terms($from_name, $from_code),
-            $this->fst_related_terms($to_name, $to_code)
+            $this->fst_related_terms($to_name, $to_code),
+            $airport_terms,
+            $airline_terms,
+            $aircraft_terms
         )));
 
         if (empty($terms)) {
