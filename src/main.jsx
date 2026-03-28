@@ -1016,15 +1016,21 @@ function App() {
       ]).filter(Boolean)
     )].join("||"));
 
+    console.log("[FST] Related URL:", url.toString());
+
     fetch(url.toString(), { headers: { Accept: "application/json" } })
       .then((response) => response.json())
       .then((data) => {
         if (cancelled) return;
         const items = Array.isArray(data?.items) ? data.items : [];
+        console.log("[FST] Related response:", { count: items.length, items, raw: data });
         setRelatedPool(items);
       })
       .catch(() => {
-        if (!cancelled) setRelatedPool([]);
+        if (!cancelled) {
+          console.log("[FST] Related request failed");
+          setRelatedPool([]);
+        }
       });
 
     return () => {

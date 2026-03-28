@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Flight Schedule Timetable
  * Description: Embed and track the Flight Schedule widget with a custom admin dashboard (KPI, Analytics, Settings, Instructions).
- * Version: 1.1.13
+ * Version: 1.1.14
  * Author: khliffz
  * Update URI: https://github.com/jkhliffz09/flight-schedule-timetable
  * Requires at least: 6.0
@@ -16,7 +16,7 @@ if (!defined('ABSPATH')) {
 require_once __DIR__ . '/includes/class-fst-github-updater.php';
 
 final class FST_Flight_Schedule_Timetable {
-    const VERSION = '1.1.13';
+    const VERSION = '1.1.14';
     const SETTINGS_OPTION = 'fst_settings';
     const STATS_OPTION = 'fst_stats';
     const DB_VERSION_OPTION = 'fst_db_version';
@@ -1328,44 +1328,56 @@ final class FST_Flight_Schedule_Timetable {
         $ids = [];
         $collected = [];
 
-        $search_query = new WP_Query([
-            'post_type' => ['post', 'page'],
-            'post_status' => 'publish',
-            'posts_per_page' => 18,
-            'ignore_sticky_posts' => true,
-            's' => implode(' ', array_slice($terms, 0, 6)),
-        ]);
+        foreach (array_slice($terms, 0, 18) as $term) {
+            $search_query = new WP_Query([
+                'post_type' => ['post', 'page'],
+                'post_status' => 'publish',
+                'posts_per_page' => 8,
+                'ignore_sticky_posts' => true,
+                's' => $term,
+            ]);
 
-        if ($search_query->have_posts()) {
-            foreach ($search_query->posts as $post) {
-                $ids[$post->ID] = true;
-                $collected[] = $post;
-            }
-        }
-        wp_reset_postdata();
-
-        $tag_query = new WP_Query([
-            'post_type' => 'post',
-            'post_status' => 'publish',
-            'posts_per_page' => 18,
-            'ignore_sticky_posts' => true,
-            'tag_slug__in' => array_slice($terms, 0, 12),
-        ]);
-
-        if ($tag_query->have_posts()) {
-            foreach ($tag_query->posts as $post) {
-                if (isset($ids[$post->ID])) {
-                    continue;
+            if ($search_query->have_posts()) {
+                foreach ($search_query->posts as $post) {
+                    if (isset($ids[$post->ID])) {
+                        continue;
+                    }
+                    $ids[$post->ID] = true;
+                    $collected[] = $post;
                 }
-                $ids[$post->ID] = true;
-                $collected[] = $post;
             }
+            wp_reset_postdata();
         }
-        wp_reset_postdata();
+
+        $tag_terms = array_slice($terms, 0, 18);
+        if (!empty($tag_terms)) {
+            $tag_query = new WP_Query([
+                'post_type' => 'post',
+                'post_status' => 'publish',
+                'posts_per_page' => 24,
+                'ignore_sticky_posts' => true,
+                'tag_slug__in' => $tag_terms,
+            ]);
+
+            if ($tag_query->have_posts()) {
+                foreach ($tag_query->posts as $post) {
+                    if (isset($ids[$post->ID])) {
+                        continue;
+                    }
+                    $ids[$post->ID] = true;
+                    $collected[] = $post;
+                }
+            }
+            wp_reset_postdata();
+        }
 
         usort($collected, function ($a, $b) use ($terms) {
             return $this->fst_related_content_score($b, $terms) <=> $this->fst_related_content_score($a, $terms);
         });
+
+        $collected = array_values(array_filter($collected, function ($post) use ($terms) {
+            return $this->fst_related_content_score($post, $terms) > 0;
+        }));
 
         $items = array_map(function ($post) {
             $excerpt = has_excerpt($post) ? get_the_excerpt($post) : wp_trim_words(wp_strip_all_tags($post->post_content), 22, '...');

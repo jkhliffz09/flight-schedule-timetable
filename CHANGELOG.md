@@ -1,3 +1,7 @@
+## [1.1.14] - 2026-03-28
+- Changed related-content candidate collection to OR-style term matching instead of a single combined search string.
+- Added debug logging for the related-content request URL and response payload in the widget console.
+
 ## [1.1.13] - 2026-03-28
 - Expanded related-content matching to include route airports, airlines, and aircraft from the current result set.
 - Improved related-card relevance by sending stop airports and resolved equipment names to the WordPress related-content endpoint.
