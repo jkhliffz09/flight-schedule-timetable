@@ -44,6 +44,7 @@ const defaults = {
   apiUrl: "https://services.flightlookup.com/v1/xml/TimeTable/",
   proxyUrl: "",
   emailUrl: "",
+  relatedUrl: "",
   subscriptionKey: "",
   result: "100",
   from: "",
@@ -146,6 +147,7 @@ const bootConfig = {
   apiUrl: params.get("apiUrl") || defaults.apiUrl,
   proxyUrl: params.get("proxyUrl") || defaults.proxyUrl,
   emailUrl: params.get("emailUrl") || defaults.emailUrl,
+  relatedUrl: params.get("relatedUrl") || defaults.relatedUrl,
   subscriptionKey: params.get("key") || defaults.subscriptionKey,
   result: params.get("result") || defaults.result,
   airline: params.get("airline") || defaults.airline,
@@ -518,6 +520,20 @@ function resolveEquipmentName(code, equipmentNameByCode) {
   return raw;
 }
 
+function hashString(input) {
+  return String(input || "").split("").reduce((acc, ch) => ((acc << 5) - acc + ch.charCodeAt(0)) | 0, 0);
+}
+
+function pickRelatedCards(pool, flightId, count = 3) {
+  const items = Array.isArray(pool) ? pool : [];
+  if (!items.length) return [];
+  if (items.length <= count) return items.slice(0, count);
+
+  const seed = Math.abs(hashString(flightId));
+  const rotated = items.slice(seed % items.length).concat(items.slice(0, seed % items.length));
+  return rotated.slice(0, count);
+}
+
 function formatAirportLabel(node, codeAttr = "LocationCode", nameAttr = "FLSLocationName") {
   if (!node) return "";
   const code = node.getAttribute(codeAttr) || "";
@@ -801,6 +817,7 @@ function App() {
   const [emailSending, setEmailSending] = useState(false);
   const [emailFeedback, setEmailFeedback] = useState("");
   const [printExpandedAll, setPrintExpandedAll] = useState(false);
+  const [relatedPool, setRelatedPool] = useState([]);
   const expandTimerRef = useRef(null);
   const [lookupData, setLookupData] = useState({
     airportCountryByIata: new Map(),
@@ -953,6 +970,39 @@ function App() {
       window.removeEventListener("afterprint", handleAfterPrint);
     };
   }, []);
+
+  useEffect(() => {
+    if (!bootConfig.relatedUrl || !summaryMeta || phase !== "done" || !flights.length) {
+      setRelatedPool([]);
+      return;
+    }
+
+    let cancelled = false;
+
+    const url = bootConfig.relatedUrl.startsWith("/")
+      ? new URL(bootConfig.relatedUrl, window.location.origin)
+      : new URL(bootConfig.relatedUrl);
+
+    url.searchParams.set("fromName", summaryMeta.originName || "");
+    url.searchParams.set("fromCode", summaryMeta.originCode || "");
+    url.searchParams.set("toName", summaryMeta.destinationName || "");
+    url.searchParams.set("toCode", summaryMeta.destinationCode || "");
+
+    fetch(url.toString(), { headers: { Accept: "application/json" } })
+      .then((response) => response.json())
+      .then((data) => {
+        if (cancelled) return;
+        const items = Array.isArray(data?.items) ? data.items : [];
+        setRelatedPool(items);
+      })
+      .catch(() => {
+        if (!cancelled) setRelatedPool([]);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [phase, flights.length, summaryMeta]);
 
   const reopenExpandedFlight = (flightId) => {
     if (expandTimerRef.current) clearTimeout(expandTimerRef.current);
@@ -1569,6 +1619,7 @@ function App() {
                 const selectedWeekdayColumn = isSevenDayMode ? weekColumns[selectedWeekdayIndex] : null;
                 const displayDate = isSevenDayMode ? formatWeekdayLabel(selectedWeekdayColumn) : f.depDate;
                 const isOpen = printExpandedAll || expanded === f.id;
+                const relatedCards = pickRelatedCards(relatedPool, f.id, 3);
 
                 return (
                 <article key={f.id} className="rounded-2xl bg-white shadow-[0_2px_10px_rgba(13,18,30,0.18)]">
@@ -1663,48 +1714,54 @@ function App() {
 
                   <div className={`fst-drawer ${isOpen ? "is-open" : "is-closed"}`}>
                     <div className="fst-drawer-inner border-t border-gray-300 bg-white px-6 pb-6 pt-5 text-sm text-black">
-                      <div className="rounded-2xl border border-gray-300 bg-white">
-                        <div className="flex items-center justify-between border-b border-gray-300 px-5 py-4">
+                      <div className="rounded-2xl bg-white">
+                        <div className="mb-4 flex items-center justify-between rounded-2xl bg-white px-5 py-4">
                           <p className="text-[1.05rem] font-semibold">Depart • {displayDate || f.depDate}</p>
                           <p className="text-[1.05rem]">{f.duration}</p>
                         </div>
 
-                        <div className="space-y-3 p-4">
+                        <div className="space-y-3 px-4 pb-4">
                           {f.segments?.map((seg, idx) => (
                             <React.Fragment key={`${f.id}-seg-${idx}`}>
                               <div className="rounded-xl border border-gray-300 bg-white p-4">
-                                <div className="mb-3 flex items-center justify-between gap-3">
-                                  <div className="flex items-end gap-2">
+                                <div className="md:hidden">
+                                  <div className="mb-4 flex items-start gap-3">
                                     <AirlineLogo airlineCode={seg.airlineCode} airlineName={seg.airlineName} />
-                                    <div className="flex flex-wrap items-center gap-2">
-                                      <span className="text-sm text-black">{seg.airlineName}</span>
-                                      {!!(seg.airlineCode && seg.flightNumber) && <span className="text-sm text-black">{`${seg.airlineCode}${seg.flightNumber}`}</span>}
+                                    <div className="min-w-0">
+                                      <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                                        <span className="text-[1.05rem] font-medium text-black">{seg.airlineName}</span>
+                                        {!!(seg.airlineCode && seg.flightNumber) && <span className="text-[1.05rem] text-black">{`${seg.airlineCode}${seg.flightNumber}`}</span>}
+                                      </div>
                                       {!!seg.operatedBy && (
-                                        <span className="rounded-full border border-blue-300 bg-blue-50 px-2 py-[2px] text-[10px] font-semibold text-blue-700">
-                                          {seg.operatedBy}
-                                        </span>
+                                        <div className="mt-2">
+                                          <span className="rounded-full border border-blue-300 bg-blue-50 px-2 py-[2px] text-[10px] font-semibold text-blue-700">
+                                            {seg.operatedBy}
+                                          </span>
+                                        </div>
                                       )}
                                       {!!seg.airEquipType && (
-                                      <span className="rounded-md border border-gray-400 px-3 py-1 text-xs text-black">
-                                          {resolveEquipmentName(seg.airEquipType, lookupData.equipmentNameByCode)}
-                                        </span>
+                                        <div className="mt-3">
+                                          <span className="inline-flex max-w-full rounded-md border border-gray-400 px-4 py-2 text-sm leading-tight text-black">
+                                            {resolveEquipmentName(seg.airEquipType, lookupData.equipmentNameByCode)}
+                                          </span>
+                                        </div>
                                       )}
                                     </div>
                                   </div>
 
                                   {seg.amenityIcons.length > 0 && (
-                                    <div className="relative">
+                                    <div className="relative mb-5">
                                       <button
                                         type="button"
                                         onClick={() => setOpenAmenity((prev) => (prev === `${f.id}-${idx}` ? null : `${f.id}-${idx}`))}
-                                        className="flex items-center gap-2 rounded-full border border-gray-400 bg-white px-3 py-1 text-black"
+                                        className="flex max-w-full items-center gap-3 overflow-x-auto rounded-full border border-gray-400 bg-white px-4 py-2 text-black"
                                       >
-                                        {seg.amenityIcons.map((iconName) => <Icon key={`${f.id}-${idx}-${iconName}`} name={iconName} size={14} />)}
-                                        <Icon name={openAmenity === `${f.id}-${idx}` ? "ChevronUp" : "ChevronDown"} size={14} />
+                                        {seg.amenityIcons.map((iconName) => <Icon key={`${f.id}-${idx}-${iconName}`} name={iconName} size={16} />)}
+                                        <Icon name={openAmenity === `${f.id}-${idx}` ? "ChevronUp" : "ChevronDown"} size={16} />
                                       </button>
 
                                       {openAmenity === `${f.id}-${idx}` && (
-                                        <div className="absolute right-0 top-[calc(100%+8px)] z-20 min-w-[320px] rounded-3xl border border-gray-300 bg-white p-4 text-black shadow-2xl">
+                                        <div className="absolute left-0 top-[calc(100%+8px)] z-20 w-full rounded-3xl border border-gray-300 bg-white p-4 text-black shadow-2xl">
                                           <div className="space-y-2">
                                             {seg.amenityItems.map((item) => (
                                               <div key={`${f.id}-${idx}-${item.code}-${item.label}`} className="flex items-center gap-3">
@@ -1717,50 +1774,165 @@ function App() {
                                       )}
                                     </div>
                                   )}
+
+                                  <div className="grid grid-cols-[56px_minmax(0,1fr)] gap-x-4 gap-y-5">
+                                    <div className="relative row-span-3 min-h-[320px]">
+                                      <div className="absolute left-[16px] top-4 bottom-4 w-px bg-gray-400"></div>
+                                      <div className="absolute left-[10px] top-0 h-4 w-4 rounded-full border border-gray-400 bg-white"></div>
+                                      <div className="absolute left-[-3px] top-[112px] bg-white text-black">
+                                        <img src={assetUrl("plane.svg")} alt="" className="h-[40px] w-[40px] object-contain" />
+                                      </div>
+                                      <div className="absolute left-[10px] bottom-0 h-4 w-4 rounded-full border border-gray-400 bg-white"></div>
+                                    </div>
+
+                                    <div className="min-w-0">
+                                      <p className="whitespace-nowrap text-2xl font-bold leading-none"><TimeWithIndicator time={seg.depTime} indicator={seg.depDayIndicator} /></p>
+                                      <p className="mt-2 break-words text-[1.02rem] font-medium leading-tight text-black">{seg.fromLabel}</p>
+                                      {seg.depTerminal && (
+                                        <p className="mt-1 text-xs text-black">{seg.depTerminal}</p>
+                                      )}
+                                    </div>
+
+                                    <div className="flex items-center">
+                                      <p className="whitespace-nowrap text-[1.05rem] font-medium leading-none text-black">{seg.duration}</p>
+                                    </div>
+
+                                    <div className="min-w-0 self-end">
+                                      <p className="whitespace-nowrap text-2xl font-bold leading-none"><TimeWithIndicator time={seg.arrTime} indicator={seg.arrDayIndicator} /></p>
+                                      <p className="mt-2 break-words text-[1.02rem] font-medium leading-tight text-black">{seg.toLabel}</p>
+                                      {seg.arrTerminal && (
+                                        <p className="mt-1 text-xs text-black">{seg.arrTerminal}</p>
+                                      )}
+                                    </div>
+                                  </div>
                                 </div>
 
-                                <div className="grid grid-cols-[72px_1fr] gap-2">
-                                  <div className="relative h-[126px]">
-                                    <div className="absolute left-[14px] top-3 h-[42px] w-px bg-gray-400"></div>
-                                    <div className="absolute left-[14px] bottom-3 h-[42px] w-px bg-gray-400"></div>
-                                    <div className="absolute left-[9px] top-0 h-3 w-3 rounded-full border border-gray-400 bg-white"></div>
-                                    <div className="absolute left-[9px] bottom-0 h-3 w-3 rounded-full border border-gray-400 bg-white"></div>
-                                    <div className="absolute left-[-6px] top-1/2 -translate-y-1/2 bg-white text-black">
-                                      <img src={assetUrl("plane.svg")} alt="" className="h-[40px] w-[40px] object-contain" />
+                                <div className="hidden md:block">
+                                  <div className="mb-3 flex items-center justify-between gap-3">
+                                    <div className="flex min-w-0 items-end gap-2">
+                                      <AirlineLogo airlineCode={seg.airlineCode} airlineName={seg.airlineName} />
+                                      <div className="flex min-w-0 flex-wrap items-center gap-2">
+                                        <span className="text-sm text-black">{seg.airlineName}</span>
+                                        {!!(seg.airlineCode && seg.flightNumber) && <span className="text-sm text-black">{`${seg.airlineCode}${seg.flightNumber}`}</span>}
+                                        {!!seg.operatedBy && (
+                                          <span className="rounded-full border border-blue-300 bg-blue-50 px-2 py-[2px] text-[10px] font-semibold text-blue-700">
+                                            {seg.operatedBy}
+                                          </span>
+                                        )}
+                                        {!!seg.airEquipType && (
+                                          <span className="max-w-full rounded-md border border-gray-400 px-3 py-1 text-xs text-black">
+                                            {resolveEquipmentName(seg.airEquipType, lookupData.equipmentNameByCode)}
+                                          </span>
+                                        )}
+                                      </div>
                                     </div>
+
+                                    {seg.amenityIcons.length > 0 && (
+                                      <div className="relative">
+                                        <button
+                                          type="button"
+                                          onClick={() => setOpenAmenity((prev) => (prev === `${f.id}-${idx}` ? null : `${f.id}-${idx}`))}
+                                          className="flex items-center gap-2 rounded-full border border-gray-400 bg-white px-3 py-1 text-black"
+                                        >
+                                          {seg.amenityIcons.map((iconName) => <Icon key={`${f.id}-${idx}-${iconName}`} name={iconName} size={14} />)}
+                                          <Icon name={openAmenity === `${f.id}-${idx}` ? "ChevronUp" : "ChevronDown"} size={14} />
+                                        </button>
+
+                                        {openAmenity === `${f.id}-${idx}` && (
+                                          <div className="absolute right-0 top-[calc(100%+8px)] z-20 min-w-[320px] rounded-3xl border border-gray-300 bg-white p-4 text-black shadow-2xl">
+                                            <div className="space-y-2">
+                                              {seg.amenityItems.map((item) => (
+                                                <div key={`${f.id}-${idx}-${item.code}-${item.label}`} className="flex items-center gap-3">
+                                                  <Icon name={item.icon} size={16} />
+                                                  <span className="text-[1.05rem]">{item.label}</span>
+                                                </div>
+                                              ))}
+                                            </div>
+                                          </div>
+                                        )}
+                                      </div>
+                                    )}
                                   </div>
 
-                                  <div className="space-y-3">
-                                    <div className="grid grid-cols-[140px_1fr] items-start gap-3">
-                                    <p className="whitespace-nowrap text-2xl font-bold leading-none"><TimeWithIndicator time={seg.depTime} indicator={seg.depDayIndicator} /></p>
-                                    <div>
-                                      <p className="text-[1.02rem] text-black">{seg.fromLabel}</p>
-                                      {seg.depTerminal && (
-                                        <p className="text-xs text-black">{seg.depTerminal}</p>
-                                      )}
+                                  <div className="grid grid-cols-[72px_1fr] gap-2">
+                                    <div className="relative h-[126px]">
+                                      <div className="absolute left-[14px] top-3 h-[42px] w-px bg-gray-400"></div>
+                                      <div className="absolute left-[14px] bottom-3 h-[42px] w-px bg-gray-400"></div>
+                                      <div className="absolute left-[9px] top-0 h-3 w-3 rounded-full border border-gray-400 bg-white"></div>
+                                      <div className="absolute left-[9px] bottom-0 h-3 w-3 rounded-full border border-gray-400 bg-white"></div>
+                                      <div className="absolute left-[-6px] top-1/2 -translate-y-1/2 bg-white text-black">
+                                        <img src={assetUrl("plane.svg")} alt="" className="h-[40px] w-[40px] object-contain" />
+                                      </div>
                                     </div>
-                                  </div>
 
-                                    <div className="grid grid-cols-[140px_1fr] items-center gap-3">
-                                    <p className="whitespace-nowrap text-base font-medium leading-none text-black">{seg.duration}</p>
-                                    <p></p>
-                                  </div>
+                                    <div className="min-w-0 space-y-3">
+                                      <div className="grid grid-cols-[140px_1fr] items-start gap-3">
+                                        <p className="whitespace-nowrap text-2xl font-bold leading-none"><TimeWithIndicator time={seg.depTime} indicator={seg.depDayIndicator} /></p>
+                                        <div className="min-w-0">
+                                          <p className="break-words text-[1.02rem] text-black">{seg.fromLabel}</p>
+                                          {seg.depTerminal && (
+                                            <p className="text-xs text-black">{seg.depTerminal}</p>
+                                          )}
+                                        </div>
+                                      </div>
 
-                                    <div className="grid grid-cols-[140px_1fr] items-end gap-3">
-                                    <p className="whitespace-nowrap text-2xl font-bold leading-none"><TimeWithIndicator time={seg.arrTime} indicator={seg.arrDayIndicator} /></p>
-                                    <div>
-                                      <p className="text-[1.02rem] text-black">{seg.toLabel}</p>
-                                      {seg.arrTerminal && (
-                                        <p className="text-xs text-black">{seg.arrTerminal}</p>
-                                      )}
+                                      <div className="grid grid-cols-[140px_1fr] items-center gap-3">
+                                        <p className="whitespace-nowrap text-base font-medium leading-none text-black">{seg.duration}</p>
+                                        <p></p>
+                                      </div>
+
+                                      <div className="grid grid-cols-[140px_1fr] items-end gap-3">
+                                        <p className="whitespace-nowrap text-2xl font-bold leading-none"><TimeWithIndicator time={seg.arrTime} indicator={seg.arrDayIndicator} /></p>
+                                        <div className="min-w-0">
+                                          <p className="break-words text-[1.02rem] text-black">{seg.toLabel}</p>
+                                          {seg.arrTerminal && (
+                                            <p className="text-xs text-black">{seg.arrTerminal}</p>
+                                          )}
+                                        </div>
+                                      </div>
                                     </div>
-                                  </div>
                                   </div>
                                 </div>
                               </div>
 
                             </React.Fragment>
                           ))}
+
+                          {!!relatedCards.length && (
+                            <div className="pt-2">
+                              <p className="mb-3 text-sm font-semibold text-black">Related Information</p>
+                              <div className="grid gap-3 md:grid-cols-3">
+                                {relatedCards.map((item) => (
+                                  <a
+                                    key={`${f.id}-${item.id}`}
+                                    href={item.url}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="group rounded-2xl border border-gray-300 bg-white p-3 transition-all duration-300 ease-out hover:-translate-y-1 hover:border-cyan-400 hover:bg-cyan-400 hover:text-black"
+                                  >
+                                    <div className="flex gap-3">
+                                      {item.image && (
+                                        <img
+                                          src={item.image}
+                                          alt={item.title}
+                                          className="h-20 w-24 flex-none rounded-xl object-cover"
+                                          loading="lazy"
+                                        />
+                                      )}
+                                      <div className="min-w-0">
+                                        <p className="fst-clamp-2 text-sm font-semibold text-black">{item.title}</p>
+                                        {item.excerpt && (
+                                          <p className="fst-clamp-3 mt-2 text-xs text-black/70 transition-colors duration-300 group-hover:text-black/85">
+                                            {item.excerpt}
+                                          </p>
+                                        )}
+                                      </div>
+                                    </div>
+                                  </a>
+                                ))}
+                              </div>
+                            </div>
+                          )}
                         </div>
                       </div>
                     </div>

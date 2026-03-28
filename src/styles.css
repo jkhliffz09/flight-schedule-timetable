@@ -300,6 +300,21 @@ body {
   overflow: hidden;
 }
 
+.fst-clamp-2,
+.fst-clamp-3 {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.fst-clamp-2 {
+  -webkit-line-clamp: 2;
+}
+
+.fst-clamp-3 {
+  -webkit-line-clamp: 3;
+}
+
 .fst-advanced-hint {
   animation: fstHintFloat 1800ms ease-in-out infinite;
 }

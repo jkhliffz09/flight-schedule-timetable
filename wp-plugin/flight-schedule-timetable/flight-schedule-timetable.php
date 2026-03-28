@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Flight Schedule Timetable
  * Description: Embed and track the Flight Schedule widget with a custom admin dashboard (KPI, Analytics, Settings, Instructions).
- * Version: 1.1.11
+ * Version: 1.1.12
  * Author: khliffz
  * Update URI: https://github.com/jkhliffz09/flight-schedule-timetable
  * Requires at least: 6.0
@@ -16,7 +16,7 @@ if (!defined('ABSPATH')) {
 require_once __DIR__ . '/includes/class-fst-github-updater.php';
 
 final class FST_Flight_Schedule_Timetable {
-    const VERSION = '1.1.11';
+    const VERSION = '1.1.12';
     const SETTINGS_OPTION = 'fst_settings';
     const STATS_OPTION = 'fst_stats';
     const DB_VERSION_OPTION = 'fst_db_version';
@@ -889,6 +889,7 @@ final class FST_Flight_Schedule_Timetable {
         $host = $this->derive_host_from_embed_url($settings['embed_js_url']);
         $proxy = ($settings['use_local_proxy'] === '1') ? rest_url('fst/v1/timetable') : '';
         $email_url = rest_url('fst/v1/email');
+        $related_url = rest_url('fst/v1/related');
 
         if (!empty($atts['proxyurl'])) {
             $proxy = $atts['proxyurl'];
@@ -917,6 +918,7 @@ final class FST_Flight_Schedule_Timetable {
           <?php if (!empty($atts['result'])) : ?>data-result="<?php echo esc_attr($atts['result']); ?>"<?php endif; ?>
           <?php if (!empty($proxy)) : ?>data-proxyurl="<?php echo esc_attr($proxy); ?>"<?php endif; ?>
           data-emailurl="<?php echo esc_attr($email_url); ?>"
+          data-relatedurl="<?php echo esc_attr($related_url); ?>"
         ></script>
         <script>
         (function () {
@@ -975,6 +977,12 @@ final class FST_Flight_Schedule_Timetable {
             'methods' => ['POST', 'OPTIONS'],
             'permission_callback' => '__return_true',
             'callback' => [$this, 'rest_email_schedule'],
+        ]);
+
+        register_rest_route('fst/v1', '/related', [
+            'methods' => ['GET', 'OPTIONS'],
+            'permission_callback' => '__return_true',
+            'callback' => [$this, 'rest_related_content'],
         ]);
     }
 
@@ -1226,6 +1234,136 @@ final class FST_Flight_Schedule_Timetable {
         }
 
         return new WP_REST_Response(['ok' => true], 200);
+    }
+
+    private function fst_related_terms($name, $code = '') {
+        $text = trim((string) $name);
+        $text = preg_replace('/\b(international|airport|airpo|regional|domestic|national|terminal|all airports|area)\b/i', ' ', $text);
+        $text = preg_replace('/[()]/', ' ', $text);
+        $parts = preg_split('/[\s,\/-]+/', strtolower($text), -1, PREG_SPLIT_NO_EMPTY);
+        $stopwords = ['the', 'and', 'for', 'city', 'intl', 'int', 'de', 'da', 'la'];
+        $terms = [];
+
+        foreach ($parts as $part) {
+            if (strlen($part) < 3 || in_array($part, $stopwords, true)) {
+                continue;
+            }
+            $terms[] = sanitize_title($part);
+        }
+
+        $compact = trim((string) preg_replace('/\s+/', ' ', $text));
+        if ($compact !== '') {
+            $terms[] = sanitize_title($compact);
+        }
+
+        $code = strtoupper(sanitize_text_field((string) $code));
+        if ($code !== '') {
+            $terms[] = strtolower($code);
+        }
+
+        return array_values(array_unique(array_filter($terms)));
+    }
+
+    private function fst_related_content_score($post, $terms) {
+        $haystack = strtolower(
+            wp_strip_all_tags(
+                implode(' ', [
+                    get_the_title($post),
+                    has_excerpt($post) ? get_the_excerpt($post) : '',
+                    $post->post_content ?? '',
+                ])
+            )
+        );
+
+        $score = 0;
+        foreach ($terms as $term) {
+            $plain = strtolower(str_replace('-', ' ', $term));
+            if ($plain !== '' && strpos($haystack, $plain) !== false) {
+                $score += 3;
+            }
+            if ($term !== '' && strpos($haystack, $term) !== false) {
+                $score += 2;
+            }
+        }
+
+        return $score;
+    }
+
+    public function rest_related_content(WP_REST_Request $request) {
+        if ($request->get_method() === 'OPTIONS') {
+            return new WP_REST_Response('', 200);
+        }
+
+        $from_name = sanitize_text_field((string) $request->get_param('fromName'));
+        $from_code = strtoupper(sanitize_text_field((string) $request->get_param('fromCode')));
+        $to_name = sanitize_text_field((string) $request->get_param('toName'));
+        $to_code = strtoupper(sanitize_text_field((string) $request->get_param('toCode')));
+
+        $terms = array_values(array_unique(array_merge(
+            $this->fst_related_terms($from_name, $from_code),
+            $this->fst_related_terms($to_name, $to_code)
+        )));
+
+        if (empty($terms)) {
+            return new WP_REST_Response(['items' => []], 200);
+        }
+
+        $ids = [];
+        $collected = [];
+
+        $search_query = new WP_Query([
+            'post_type' => ['post', 'page'],
+            'post_status' => 'publish',
+            'posts_per_page' => 18,
+            'ignore_sticky_posts' => true,
+            's' => implode(' ', array_slice($terms, 0, 6)),
+        ]);
+
+        if ($search_query->have_posts()) {
+            foreach ($search_query->posts as $post) {
+                $ids[$post->ID] = true;
+                $collected[] = $post;
+            }
+        }
+        wp_reset_postdata();
+
+        $tag_query = new WP_Query([
+            'post_type' => 'post',
+            'post_status' => 'publish',
+            'posts_per_page' => 18,
+            'ignore_sticky_posts' => true,
+            'tag_slug__in' => array_slice($terms, 0, 12),
+        ]);
+
+        if ($tag_query->have_posts()) {
+            foreach ($tag_query->posts as $post) {
+                if (isset($ids[$post->ID])) {
+                    continue;
+                }
+                $ids[$post->ID] = true;
+                $collected[] = $post;
+            }
+        }
+        wp_reset_postdata();
+
+        usort($collected, function ($a, $b) use ($terms) {
+            return $this->fst_related_content_score($b, $terms) <=> $this->fst_related_content_score($a, $terms);
+        });
+
+        $items = array_map(function ($post) {
+            $excerpt = has_excerpt($post) ? get_the_excerpt($post) : wp_trim_words(wp_strip_all_tags($post->post_content), 22, '...');
+            $image = get_the_post_thumbnail_url($post, 'medium');
+
+            return [
+                'id' => (int) $post->ID,
+                'title' => get_the_title($post),
+                'url' => get_permalink($post),
+                'excerpt' => $excerpt,
+                'image' => $image ?: '',
+            ];
+        }, array_slice($collected, 0, 12));
+
+        return new WP_REST_Response(['items' => $items], 200);
     }
 
     public function serve_raw_xml_response($served, $result, $request, $server) {

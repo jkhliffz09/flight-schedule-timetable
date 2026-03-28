@@ -21,6 +21,7 @@
     apiUrl: "data-apiurl",
     proxyUrl: "data-proxyurl",
     emailUrl: "data-emailurl",
+    relatedUrl: "data-relatedurl",
     key: "data-key",
     result: "data-result",
     from: "data-from",

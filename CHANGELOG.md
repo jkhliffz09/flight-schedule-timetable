@@ -1,3 +1,8 @@
+## [1.1.12] - 2026-03-28
+- Added related published post/page cards to each expanded result via a new WordPress REST endpoint.
+- Added route-based related content matching for origin/destination terms, with up to 3 cards per expanded result.
+- Improved mobile expanded layouts and timeline spacing, and removed the extra outer border in the collapsible area.
+
 ## [1.1.11] - 2026-03-28
 - Made the search form sticky at the top of the widget while scrolling.
 - Moved the email modal to a top-aligned, scroll-safe layout and removed the extra explanatory text.
