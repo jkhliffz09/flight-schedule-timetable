@@ -1,3 +1,6 @@
+## [1.1.15] - 2026-03-28
+- Decoded HTML entities in related-content titles and excerpts before returning them to the widget.
+
 ## [1.1.14] - 2026-03-28
 - Changed related-content candidate collection to OR-style term matching instead of a single combined search string.
 - Added debug logging for the related-content request URL and response payload in the widget console.

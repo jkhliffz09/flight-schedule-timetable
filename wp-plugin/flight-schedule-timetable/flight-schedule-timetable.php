@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Flight Schedule Timetable
  * Description: Embed and track the Flight Schedule widget with a custom admin dashboard (KPI, Analytics, Settings, Instructions).
- * Version: 1.1.14
+ * Version: 1.1.15
  * Author: khliffz
  * Update URI: https://github.com/jkhliffz09/flight-schedule-timetable
  * Requires at least: 6.0
@@ -16,7 +16,7 @@ if (!defined('ABSPATH')) {
 require_once __DIR__ . '/includes/class-fst-github-updater.php';
 
 final class FST_Flight_Schedule_Timetable {
-    const VERSION = '1.1.14';
+    const VERSION = '1.1.15';
     const SETTINGS_OPTION = 'fst_settings';
     const STATS_OPTION = 'fst_stats';
     const DB_VERSION_OPTION = 'fst_db_version';
@@ -1382,12 +1382,13 @@ final class FST_Flight_Schedule_Timetable {
         $items = array_map(function ($post) {
             $excerpt = has_excerpt($post) ? get_the_excerpt($post) : wp_trim_words(wp_strip_all_tags($post->post_content), 22, '...');
             $image = get_the_post_thumbnail_url($post, 'medium');
+            $charset = get_bloginfo('charset') ?: 'UTF-8';
 
             return [
                 'id' => (int) $post->ID,
-                'title' => get_the_title($post),
+                'title' => html_entity_decode((string) get_the_title($post), ENT_QUOTES | ENT_HTML5, $charset),
                 'url' => get_permalink($post),
-                'excerpt' => $excerpt,
+                'excerpt' => html_entity_decode((string) $excerpt, ENT_QUOTES | ENT_HTML5, $charset),
                 'image' => $image ?: '',
             ];
         }, array_slice($collected, 0, 12));
